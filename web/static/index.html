@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>招聘雷达</title>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+    <link rel="alternate icon" type="image/png" href="/static/favicon-32.png">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="stylesheet" href="/static/styles.css">
+    <script type="module" src="/static/js/main.js"></script>
+  </head>
+  <body>
+    <main>
+      <section id="login-view" class="login-shell" hidden>
+        <div class="brand-mark">招</div>
+        <p class="eyebrow">RECRUITMENT RADAR</p>
+        <h1>招聘雷达</h1>
+        <p class="login-copy">登录后，你的浏览进度会独立保存，不会和其他人混在一起。</p>
+        <form id="login-form" class="login-form">
+          <label>用户名<input id="username" name="username" autocomplete="username" required maxlength="40"></label>
+          <label>访问码<input id="access-code" name="access_code" type="password" autocomplete="current-password" required minlength="8"></label>
+          <button type="submit">进入招聘雷达</button>
+          <p id="login-error" class="form-error" role="alert"></p>
+        </form>
+      </section>
+
+      <section id="app-view" hidden>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">RECRUITMENT RADAR</p>
+            <h1>招聘雷达</h1>
+          </div>
+          <div class="user-box">
+            <span id="user-name"></span>
+            <button id="logout-button" class="text-button" type="button">退出</button>
+          </div>
+        </header>
+
+        <nav class="view-tabs" aria-label="功能视图">
+          <button type="button" data-view="articles" class="active">文章看板</button>
+          <button type="button" data-view="favorites">收藏<span id="fav-tab-count" class="tab-count" hidden></span></button>
+          <button type="button" data-view="applications">投递管理<span id="app-tab-count" class="tab-count" hidden></span></button>
+        </nav>
+
+        <div id="articles-view">
+          <section class="hero">
+            <div>
+              <p id="range-label" class="hero-label"></p>
+              <h2>今天，从真正值得看的机会开始。</h2>
+              <p id="source-label" class="hero-copy"></p>
+              <p id="updated-at" class="hero-updated" hidden></p>
+            </div>
+            <div class="progress-card" aria-label="浏览进度">
+              <div class="progress-number"><strong id="unread-count">0</strong><span>篇未读</span></div>
+              <div class="progress-track"><span id="progress-bar"></span></div>
+              <p><span id="read-count">0</span> / <span id="total-count">0</span> 已浏览</p>
+            </div>
+          </section>
+
+          <section class="quickbar" aria-label="快捷筛选">
+            <label class="search-box"><span>搜索</span><input id="search-input" type="search" placeholder="公司、岗位或公众号" autocomplete="off"></label>
+            <div class="segmented" role="group" aria-label="阅读状态">
+              <button class="active" type="button" data-status="unread">未读</button>
+              <button type="button" data-status="all">全部</button>
+              <button type="button" data-status="read">已读</button>
+            </div>
+          </section>
+
+          <section class="controls" aria-label="更多筛选">
+            <div class="filter-row">
+              <label><span>公众号</span><select id="account-filter"><option value="">全部公众号</option></select></label>
+              <label><span>AI 筛选</span><select id="screen-filter">
+                <option value="">全部文章</option>
+                <option value="mine">符合我的筛选</option>
+                <option value="kept">计算机类精选</option>
+                <option value="skipped">非计算机类</option>
+                <option value="none">未筛选</option>
+              </select></label>
+            </div>
+            <div class="screen-run" aria-label="AI 筛选运行">
+              <label><span>筛选日期</span><input id="screen-date" type="date"></label>
+              <label class="check"><input id="screen-force" type="checkbox"><span>重新分析</span></label>
+              <button id="screen-run-button" type="button">开始 AI 筛选</button>
+              <button id="screen-all-button" type="button" class="secondary">批量筛选全部</button>
+              <p id="screen-status" role="status" aria-live="polite"></p>
+            </div>
+            <div class="prefs-row" aria-label="我的筛选偏好">
+              <label><span>意向城市</span><input id="pref-cities" type="text" placeholder="如：成都、杭州、西安（命中的地点会高亮，留空不高亮）" autocomplete="off"></label>
+              <label><span>方向关键词</span><input id="pref-keywords" type="text" placeholder="如：软件、人工智能、安全（用于「符合我的筛选」，留空不限）" autocomplete="off"></label>
+              <button id="pref-save-button" type="button">保存偏好</button>
+              <p id="pref-status" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+
+          <section id="article-list" class="article-list" aria-live="polite"></section>
+          <nav id="pager" class="pager" hidden aria-label="文章分页"></nav>
+          <div id="empty-state" class="empty-state" hidden>没有符合当前条件的文章。</div>
+        </div>
+
+        <section id="favorites-view" hidden aria-label="收藏列表">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">FAVORITES</p>
+              <h2>我的收藏</h2>
+            </div>
+            <button id="fav-manage-toggle" type="button" class="secondary-btn">管理分组</button>
+          </div>
+          <div id="fav-group-bar" class="chip-bar" aria-label="收藏分组筛选"></div>
+          <div id="fav-manage-panel" class="manage-panel" hidden></div>
+          <div id="fav-list" class="card-list"></div>
+          <div id="fav-empty" class="empty-state" hidden>还没有收藏。回到文章看板，点文章下方的「收藏」或「收藏到某分组」，文章就会出现在这里。</div>
+        </section>
+
+        <section id="applications-view" hidden aria-label="投递管理">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">APPLICATIONS</p>
+              <h2>投递管理</h2>
+            </div>
+            <button id="app-form-toggle" type="button" class="secondary-btn">添加公司</button>
+          </div>
+          <form id="app-add-form" class="app-form" hidden>
+            <label><span>公司名称</span><input id="app-company" maxlength="100" autocomplete="off" required placeholder="公司名（从文章记投递时会自动预填，可修改）"></label>
+            <label><span>招聘链接</span><input id="app-joburl" maxlength="600" autocomplete="off" placeholder="https://…（招聘网站或网申链接，可选，用于一键跳转）"></label>
+            <label><span>备注</span><input id="app-note" maxlength="500" autocomplete="off" placeholder="岗位 / 渠道 / 备注（可选）"></label>
+            <div class="app-form-status">
+              <span>当前状态</span>
+              <div class="chip-set" id="app-form-status">
+                <button type="button" data-form-status="planned">待投递</button>
+                <button type="button" data-form-status="applied" class="active">已投递</button>
+              </div>
+            </div>
+            <p id="app-form-article" class="app-form-article" hidden></p>
+            <div class="app-form-actions">
+              <button type="submit">加入投递管理</button>
+              <button type="button" id="app-form-cancel" class="secondary-btn">收起</button>
+              <p id="app-form-error" class="form-error" role="alert"></p>
+            </div>
+          </form>
+          <div class="chip-bar app-filter">
+            <span id="app-filter-chips" class="chip-set" aria-label="投递状态筛选"></span>
+            <label class="app-search"><span>搜索</span><input id="app-search" type="search" placeholder="公司、备注" autocomplete="off"></label>
+          </div>
+          <div id="app-list" class="card-list"></div>
+          <div id="app-empty" class="empty-state" hidden>还没有投递记录。点右上角「添加公司」，或在文章看板 / 收藏里点「记投递」。</div>
+        </section>
+
+        <div id="sync-notice" class="sync-notice" role="status" aria-live="polite"></div>
+      </section>
+
+      <aside id="floating-widget" class="floating-widget" hidden aria-label="阅读进度速览">
+        <div class="fw-item"><strong id="today-read-count">0</strong><span>今日已读</span></div>
+        <div class="fw-divider"></div>
+        <div class="fw-item"><strong id="fw-unread-count">0</strong><span>未读</span></div>
+      </aside>
+    </main>
+  </body>
+</html>

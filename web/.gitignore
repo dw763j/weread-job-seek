@@ -1,0 +1,10 @@
+# WAL/SHM 是 SQLite 运行时文件，与主库 clicks.sqlite3 内容同步；
+# 不应提交（每次运行都会变），但主库本身包含点击记录，可以入库。
+data/*.sqlite3-shm
+data/*.sqlite3-wal
+data/*.sqlite3.bak.*
+__pycache__/
+tests/__pycache__/
+# AI 筛选的运行日志与海报图片缓存（结果文件 screen_results.json 属于数据，入库）
+data/screen-logs/
+data/screen-cache/

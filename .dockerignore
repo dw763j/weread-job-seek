@@ -1,0 +1,20 @@
+# 构建上下文只保留 Dockerfile 所需的脚本，排除数据、密钥与运行产物
+.git
+.gitignore
+.venv
+.uv-cache
+__pycache__
+*.pyc
+.browser-profile
+.orchestrator-logs
+node_modules
+输出
+网页服务/data
+网页服务/tests
+.env
+*.log
+.~lock.*
+.DS_Store
+docker-compose.yaml
+Dockerfile
+.dockerignore

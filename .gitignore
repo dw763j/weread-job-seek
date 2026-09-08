@@ -1,0 +1,19 @@
+# 浏览器 Profile 含登录 Cookie、设备标识和浏览记录，禁止提交或共享。
+.browser-profile/
+.orchestrator-logs/
+.DS_Store
+.env
+.venv/
+__pycache__/
+
+# 编辑器锁文件
+.~lock.*
+
+# uv 缓存（固定在项目内，见 weread_extract.mjs runSummary）
+.uv-cache/
+
+# 本地 Agent 工具（skills CLI 安装的技能）
+.agents/
+
+# 提取脚本运行日志（运行产物，不随每日数据提交入库）
+output/weread_extract/*.log

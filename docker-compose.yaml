@@ -1,0 +1,51 @@
+# 招聘链接网页服务
+#
+# 镜像只提供 Python 环境（见 Dockerfile），代码通过 bind 挂载进容器，
+# 改代码后只需 docker compose restart web，无需重建镜像。
+# 汇总不在容器里跑：抓取脚本与手动重跑都直接用本机 uv 执行 generate_summary.py。
+#
+# 使用：
+#   docker compose up -d --build        # 首次构建镜像并后台启动
+#   docker compose restart web          # 改代码后重启以加载新代码
+#   docker compose logs -f web          # 看日志
+#
+# 服务以宿主机用户(1000:1000) 运行，写出的文件归宿主机用户所有，
+# 解决此前写库/写输出目录时的权限错乱问题。restart: unless-stopped 保证
+# 系统重启后（Docker daemon 开机自启的前提下）容器自动拉起。
+
+services:
+  web:
+    build: .
+    image: weread-job-seek:latest
+    command: ["python", "web/server.py", "serve", "--host", "0.0.0.0", "--port", "8888"]
+    restart: unless-stopped
+    # AI 筛选（web/screen_update.py）在容器内跑，GLM 端点从宿主机 .env 的
+    # DEDUP_* 变量透传（docker compose 会自动读取项目根目录的 .env 做替换）。
+    environment:
+      - SCREEN_API_BASE=${DEDUP_API_BASE:-}
+      - SCREEN_MODEL=${DEDUP_MODEL:-}
+      - SCREEN_API_KEY=${DEDUP_API_KEY:-}
+    ports:
+      # 默认绑定所有网卡 8888；如需固定到某 IP，用 WEB_BIND=192.168.1.x docker compose up -d
+      - "${WEB_BIND:-0.0.0.0}:8888:8888"
+    volumes:
+      # 挂载服务代码（server.py、static 等），改代码重启容器即生效
+      - ./web:/app/web:ro
+      # 读写挂载 SQLite（用户与点击记录持久化，保留现有数据）；
+      # 嵌套挂载比上面的 :ro 更深，优先级更高，因此 data 目录可写
+      - ./web/data:/app/web/data
+      # 只读挂载抓取结果（每组去重 JSON），新抓取结果会自动被网页读到
+      - ./output:/app/output:ro
+    user: "1000:1000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8888/healthz', timeout=3).status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

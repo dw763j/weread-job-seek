@@ -1,0 +1,16 @@
+{
+  "说明": "每个公众号给一篇它的文章链接（公开页），脚本会从页面里解出 __biz 并换算成微信读书 bookId。",
+  "accounts": [
+    { "name": "成功就业", "url": "https://mp.weixin.qq.com/s/yXugtKJbc6q92Qv2LdNF0A" },
+    { "name": "国科大就业", "url": "https://mp.weixin.qq.com/s/Szm5DWkFqYma3uwgo8is2Q" },
+    { "name": "北航就业", "url": "https://mp.weixin.qq.com/s/hfvFU55QKW-BvtCyupGE1g" },
+    { "name": "成电就业", "url": "https://mp.weixin.qq.com/s/LcNzr8hGzJMbnlEEOjpXfw" },
+    { "name": "北大就业", "url": "https://mp.weixin.qq.com/s/DYLqEi1DsPONmDYFW2ph4g" },
+    { "name": "西安交大就业创业", "url": "https://mp.weixin.qq.com/s/x1ZebQ2ltDOoCmx2A48Q-Q" },
+    { "name": "川大就业", "url": "https://mp.weixin.qq.com/s/U0ETvqyDGLnWWOW0OHv-UQ" },
+    { "name": "人大就业创业", "url": "https://mp.weixin.qq.com/s/-bh2tbAiwpieqSJHgrmCWg", "backup_url": "https://mp.weixin.qq.com/s/uHdC9UiBHrWwNjwnv7hmJw" },
+    { "name": "浙大就业", "url": "https://mp.weixin.qq.com/s/bjfLQ6mPJYjnyOycu2sGdA", "backup_url": "https://mp.weixin.qq.com/s/iiiOjBUzgcr0xn5LWhke0Q" },
+    { "name": "西电科大就业指导服务中心", "url": "https://mp.weixin.qq.com/s/8Cr40m1o2OyPwv6kprsfuA" },
+    { "name": "西工大就业", "url": "https://mp.weixin.qq.com/s/MDdMuGYHKICztgrbYkl4jQ" }
+  ]
+}
