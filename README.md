@@ -64,6 +64,33 @@ flowchart LR
 
 ## 🚀 快速开始
 
+### 第一步：先把看板跑起来看看效果
+
+仓库自带一份数据快照，不需要 Chrome、不需要 API Key，三条命令就能看到网站长什么样：
+
+```sh
+git clone https://github.com/dw763j/weread-job-seek.git
+cd weread-job-seek
+
+# 创建一个看板账号，终端会打印一次性访问码
+python3 web/server.py add-user me --name 我
+
+# 启动看板
+python3 web/server.py serve
+```
+
+浏览器打开 <http://127.0.0.1:8787>，用刚才的用户名和访问码登录——按日期的招聘清单、已读打勾、收藏与投递管理、AI 筛选视图，快照数据上的全部功能都能点。网页服务只用 Python 标准库（Python 3.12+ 即可，无需先装依赖）；用 uv 的话 `uv run python web/server.py serve` 等价。局域网多人访问加 `--host 0.0.0.0`。
+
+想长期部署在服务器上，用 Docker：
+
+```sh
+docker compose up -d --build        # 监听 0.0.0.0:8888，随系统自启
+```
+
+### 第二步：让数据变成你自己的
+
+看板展示的是仓库里的快照。要追订你自己的一批公众号并每天更新，先在 `微信读书提取配置.json` 里换成你的公众号列表，然后跑通一次抓取流水线（之后可交给 Agent 或定时任务，见[下节](#-告诉你的-agent)）：
+
 ```sh
 # 0) 安装依赖（Python 侧用 uv 管理）
 uv sync
@@ -79,14 +106,9 @@ node weread_extract.mjs 9223 --deep   # 每周全量深扫
 
 # 3) 生成汇总（抓取结束后脚本也会自动执行）
 uv run python generate_summary.py --range 20260710-99999999
-```
 
-多人网页看板（可选）：
-
-```sh
-docker compose up -d --build        # 监听 0.0.0.0:8888，随系统自启
-# 或不用 Docker：
-uv run python web/server.py serve --host 0.0.0.0 --port 8888
+# 4) AI 筛选（可选；需要 .env 里的 API Key，缺 zxing-cpp/pillow 时自动降级）
+uv run python web/screen_update.py --all
 ```
 
 ## 🤖 告诉你的 Agent
