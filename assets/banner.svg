@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset=".5" stop-color="#0F2444"/>
+      <stop offset="1" stop-color="#0D3247"/>
+    </linearGradient>
+    <linearGradient id="line" x1="72" y1="0" x2="248" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#38BDF8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".8" cy=".45" r=".55">
+      <stop offset="0" stop-color="#38BDF8" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1280" height="360" rx="26" fill="url(#bg)"/>
+  <rect width="1280" height="360" rx="26" fill="url(#glow)"/>
+
+  <circle cx="700" cy="36" r="70" stroke="#24466E" stroke-width="1.5"/>
+  <circle cx="52" cy="322" r="46" stroke="#24466E" stroke-width="1.5"/>
+  <circle cx="1236" cy="308" r="26" stroke="#24466E" stroke-width="1.5"/>
+  <circle cx="742" cy="120" r="4" fill="#33527A"/>
+  <circle cx="668" cy="300" r="5" fill="#33527A"/>
+  <circle cx="756" cy="286" r="3" fill="#33527A"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">
+    <rect x="72" y="56" width="196" height="32" rx="16" stroke="#34D399" stroke-opacity=".8" fill="#34D399" fill-opacity=".08"/>
+    <text x="170" y="77" text-anchor="middle" font-size="13" letter-spacing="3" fill="#6EE7B7">OPEN SOURCE · MIT</text>
+
+    <text x="70" y="172" font-size="60" font-weight="700" fill="#F8FAFC"><tspan fill="#34D399">weread</tspan>-job-<tspan fill="#38BDF8">seek</tspan></text>
+    <rect x="72" y="192" width="176" height="7" rx="3.5" fill="url(#line)"/>
+    <text x="72" y="242" font-size="29" font-weight="600" fill="#DBEAFE">高校就业公众号招聘信息聚合</text>
+    <text x="72" y="280" font-size="18" fill="#94A3B8">每日自动抓取 · 三层去重 · LLM 复核 · 多人看板 · AI 筛选</text>
+    <text x="72" y="314" font-size="13.5" font-style="italic" fill="#5C718F">Aggregate campus-hiring posts from university employment WeChat channels</text>
+  </g>
+
+  <!-- Group A: 多个公众号卡片 -->
+  <g>
+    <rect x="760" y="88" width="116" height="78" rx="10" fill="#28405E" stroke="#7BA7D9" stroke-width="2"/>
+    <rect x="772" y="108" width="116" height="78" rx="10" fill="#2E4A6E" stroke="#8FB9E8" stroke-width="2"/>
+    <rect x="784" y="128" width="116" height="78" rx="10" fill="#33527A" stroke="#A6CBF2" stroke-width="2"/>
+    <circle cx="808" cy="152" r="10" fill="#38BDF8"/>
+    <rect x="826" y="145" width="58" height="9" rx="4.5" fill="#BFE0FF"/>
+    <rect x="826" y="161" width="42" height="7" rx="3.5" fill="#7FA9D9"/>
+    <rect x="796" y="124" width="42" height="7" rx="3.5" fill="#6C96C9"/>
+    <rect x="784" y="104" width="36" height="7" rx="3.5" fill="#628CBF"/>
+    <text x="842" y="234" text-anchor="middle" font-size="14" fill="#A9BEDC" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">11 个高校就业号</text>
+  </g>
+
+  <!-- A → B -->
+  <path d="M906 158 C 918 154 925 149 933 143" stroke="#8FB9E8" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <path d="M938 141 L926 137 L929 148 Z" fill="#8FB9E8"/>
+
+  <!-- Group B: 去重漏斗 -->
+  <g>
+    <path d="M930 112 H1020 L992 158 V186 H958 V158 Z" fill="#1E4B6E" stroke="#38BDF8" stroke-width="3"/>
+    <text x="975" y="142" text-anchor="middle" font-size="17" font-weight="700" fill="#BAE6FD" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">去重</text>
+    <text x="975" y="177" text-anchor="middle" font-size="11" fill="#67E8F9" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">LLM</text>
+    <text x="975" y="234" text-anchor="middle" font-size="14" fill="#A9BEDC" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">三层去重 · LLM 复核</text>
+  </g>
+
+  <!-- B → C -->
+  <path d="M1004 150 C 1018 147 1028 149 1040 153" stroke="#8FB9E8" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <path d="M1046 154 L1034 149 L1035 161 Z" fill="#8FB9E8"/>
+
+  <!-- Group C: 多人看板 -->
+  <g>
+    <rect x="1056" y="76" width="184" height="136" rx="14" fill="#2E4A6E" stroke="#9CC4EF" stroke-width="2"/>
+    <text x="1072" y="101" font-size="13" fill="#D6E8FB" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">今日招聘</text>
+    <circle cx="1196" cy="96" r="9" fill="#F59E0B" stroke="#2E4A6E" stroke-width="2.5"/>
+    <circle cx="1212" cy="96" r="9" fill="#F472B6" stroke="#2E4A6E" stroke-width="2.5"/>
+    <line x1="1072" y1="110" x2="1224" y2="110" stroke="#628CBF" stroke-width="1.5"/>
+    <circle cx="1084" cy="128" r="9" fill="#34D399"/>
+    <path d="M1080 128 l2.5 3 l4.5 -6" stroke="#052E1B" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="1100" y="124" width="96" height="9" rx="4.5" fill="#C4DDF9"/>
+    <circle cx="1084" cy="152" r="9" stroke="#A9C6E8" stroke-width="2"/>
+    <rect x="1100" y="148" width="110" height="9" rx="4.5" fill="#8FB6E2"/>
+    <circle cx="1084" cy="176" r="9" stroke="#A9C6E8" stroke-width="2"/>
+    <rect x="1100" y="172" width="72" height="9" rx="4.5" fill="#8FB6E2"/>
+    <text x="1148" y="234" text-anchor="middle" font-size="14" fill="#A9BEDC" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif">多人看板 · 已读互不干扰</text>
+  </g>
+</svg>

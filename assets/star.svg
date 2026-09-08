@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="240" viewBox="0 0 960 240" fill="none">
+  <defs>
+    <linearGradient id="sbg" x1="0" y1="0" x2="960" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0B1220"/>
+      <stop offset="1" stop-color="#132A4A"/>
+    </linearGradient>
+    <linearGradient id="starGrad" x1="440" y1="50" x2="520" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="2" y="2" width="956" height="236" rx="22" fill="url(#sbg)" stroke="#24476B" stroke-width="1.5"/>
+
+  <circle cx="480" cy="98" r="58" fill="#F59E0B" fill-opacity=".14"/>
+  <path d="M480 52 L491.2 82.6 L523.7 83.8 L498.1 103.9 L507 135.2 L480 117 L453 135.2 L461.9 103.9 L436.3 83.8 L468.8 82.6 Z" fill="url(#starGrad)" stroke="#FBBF24" stroke-width="2" stroke-linejoin="round"/>
+
+  <path d="M400 56 L403 59 L400 62 L397 59 Z" fill="#FDE047"/>
+  <path d="M556 116 L559.5 119.5 L556 123 L552.5 119.5 Z" fill="#FBBF24"/>
+  <path d="M428 146 L430.5 148.5 L428 151 L425.5 148.5 Z" fill="#F59E0B"/>
+  <path d="M540 52 L543 55 L540 58 L537 55 Z" fill="#FDE047"/>
+  <circle cx="382" cy="92" r="3" fill="#F59E0B" fill-opacity=".7"/>
+  <circle cx="580" cy="86" r="3.5" fill="#FDE047" fill-opacity=".7"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif" text-anchor="middle">
+    <text x="480" y="192" font-size="27" font-weight="600" fill="#F1F5F9">如果这个项目帮你的求职季省下了时间</text>
+    <text x="480" y="220" font-size="16" fill="#8FA6C4">点一个 Star —— 这是每日数据持续更新的最大动力</text>
+  </g>
+</svg>

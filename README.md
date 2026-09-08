@@ -1,18 +1,36 @@
-# weread-job-seek · 高校就业公众号招聘信息聚合
+<div align="center">
 
-![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)
-![Node.js](https://img.shields.io/badge/Node.js-CDP%E6%8A%93%E5%8F%96-339933?logo=nodedotjs&logoColor=white)
-![uv](https://img.shields.io/badge/uv-%E4%BE%9D%E8%B5%96%E7%AE%A1%E7%90%86-DE5FE9)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
-![LLM](https://img.shields.io/badge/LLM-%E8%AF%AD%E4%B9%89%E5%8E%BB%E9%87%8D-6F42C1?logo=openai&logoColor=white)
+<img src="assets/banner.svg" alt="weread-job-seek · 高校就业公众号招聘信息聚合" width="880"/>
+
+# weread-job-seek
+
+**自动追订高校就业公众号 · 每日聚合去重 · 多人看板协作**
+
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-CDP%E6%8A%93%E5%8F%96-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![uv](https://img.shields.io/badge/uv-%E4%BE%9D%E8%B5%96%E7%AE%A1%E7%90%86-DE5FE9?style=for-the-badge)](https://docs.astral.sh/uv/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![LLM](https://img.shields.io/badge/LLM-%E8%AF%AD%E4%B9%89%E5%8E%BB%E9%87%8D-6F42C1?style=for-the-badge&logo=openai&logoColor=white)](#-工作原理)
+
+[![Stars](https://img.shields.io/github/stars/dw763j/weread-job-seek?style=for-the-badge&logo=github&color=facc15)](./stargazers)
+[![Forks](https://img.shields.io/github/forks/dw763j/weread-job-seek?style=for-the-badge&logo=github&color=38bdf8)](./forks)
+[![Issues](https://img.shields.io/github/issues/dw763j/weread-job-seek?style=for-the-badge&color=3fb950)](./issues)
+[![Last Commit](https://img.shields.io/github/last-commit/dw763j/weread-job-seek?style=for-the-badge&color=8b5cf6)](./commits)
+[![License](https://img.shields.io/github/license/dw763j/weread-job-seek?style=for-the-badge&color=22c55e)](./LICENSE)
+
+**[🚀 快速开始](#-快速开始)** · **[✨ 功能特性](#-功能特性)** · **[🧩 工作原理](#-工作原理)** · **[🤖 告诉你的 Agent](#-告诉你的-agent)** · **[📚 更多文档](#-更多文档)** · **[⭐ 支持一下](#-支持这个项目)**
+
+</div>
 
 > 自动追订一批高校就业公众号，把每天的招聘推文聚合成一份按日期排列、重复只出现一次的清单，多人在网页看板上各自标记看过的条目。
+
+## 💡 为什么做这个项目
 
 求职季花时间最多的环节是找信息。招聘信息散落在十几个学校就业公众号里，每天得逐个翻。同一场招聘会，各校就业号都会转发一遍，标题前缀五花八门，看完记不住看过没有。几个人一起盯同一批号，谁读过什么也说不清。
 
 这个项目把上面这些事交给机器：新推文每天自动入库，重复的合并成一条，看板上看过的打个勾，多设备、多人之间互不干扰。默认配置收录 11 个高校就业公众号，在 `微信读书提取配置.json` 里可以换成你自己关注的任何一批号。
 
-## 功能特性
+## ✨ 功能特性
 
 | 功能 | 说明 |
 |---|---|
@@ -25,7 +43,7 @@
 | 一键部署 | Docker Compose 常驻并随系统自启；不用 Docker 也能纯命令行跑 |
 | 轻依赖 | 网页服务只用 Python 标准库；AI 筛选另需 zxing-cpp 与 pillow（缺失时自动降级为纯文本分析）；抓取只需要一个登录过微信读书的 Chrome |
 
-## 工作原理
+## 🧩 工作原理
 
 ```mermaid
 flowchart LR
@@ -44,7 +62,7 @@ flowchart LR
 4. **汇总去重**：读入全部单号 CSV，先做规范化标题的精确合并，再按转发前缀规则合并，品牌硬否决筛掉不同招聘主体的误合并，剩余候选对按批并发交给 OpenAI 兼容端点判定，最后并查集成组。判定结果逐对缓存，次日只判新增。
 5. **网页看板**：直接读分组 JSON 渲染，点击行为写 SQLite，不参与抓取与去重逻辑。可选的 AI 筛选（`web/screen_update.py`）在同一界面按日期识别计算机类岗位，结果写 `web/data/screen_results.json` 供看板合并展示。
 
-## 快速开始
+## 🚀 快速开始
 
 ```sh
 # 0) 安装依赖（Python 侧用 uv 管理）
@@ -71,7 +89,7 @@ docker compose up -d --build        # 监听 0.0.0.0:8888，随系统自启
 uv run python web/server.py serve --host 0.0.0.0 --port 8888
 ```
 
-## 告诉你的 Agent
+## 🤖 告诉你的 Agent
 
 这套流程完全可以让编码 Agent（Claude Code、ZCode、Codex 等）代跑。仓库根目录的 [AGENTS.md](./AGENTS.md) 就是一份现成的操作手册，主流 Agent 启动时会自动读取它；里面写清了每天更新的固定动作和风控应对：先请你在专用 Chrome 窗口完成验证码，再跑 `node weread_extract.mjs 9223`，抓完自动生成汇总；接口返回 `-2041` 时停下来等人工验证，返回 `-2014` 时换 9224 备用账号补跑。
 
@@ -85,7 +103,7 @@ uv run python web/server.py serve --host 0.0.0.0 --port 8888
 出现 -2014 就改用 9224 备用账号补跑剩余账号。
 ```
 
-## 配置
+## 🔧 配置
 
 | 配置 | 说明 |
 |---|---|
@@ -93,7 +111,7 @@ uv run python web/server.py serve --host 0.0.0.0 --port 8888
 | `.env`（参考 `.env.example`） | 去重端点：`DEDUP_API_BASE` / `DEDUP_MODEL` / `DEDUP_API_KEY`，任何 OpenAI 兼容接口均可 |
 | `--crawl-days N` / `WR_CRAWL_DAYS` | 增量抓取窗口（默认 14 天） |
 
-## 输出文件
+## 📤 输出文件
 
 | 文件 | 说明 |
 |---|---|
@@ -103,7 +121,7 @@ uv run python web/server.py serve --host 0.0.0.0 --port 8888
 | `output/weread_extract/汇总-去重组.json` | 分组结果 + 逐对判定缓存（下次复用） |
 | `output/weread_extract/进度.json` / `运行报告.json` | 断点进度与每次运行报告 |
 
-## 目录结构
+## 📁 目录结构
 
 ```
 ├── weread_extract.mjs            # 主抓取脚本（Node，CDP 驱动 Chrome）
@@ -118,23 +136,46 @@ uv run python web/server.py serve --host 0.0.0.0 --port 8888
 │   ├── server.py
 │   ├── static/
 │   └── data/                     # SQLite（用户与点击记录）
+├── assets/                       # README 用图（banner / Star 卡片）
 ├── docker-compose.yaml / Dockerfile
 └── output/                       # 输出目录
 ```
 
-## 使用注意与风控
+## 🚨 使用注意与风控
 
 - 微信读书对高频访问会弹验证码（接口返回 `-2041`）：停下来，去专用 Chrome 窗口完成验证码再续跑，断点已自动保存。接口返回 `-2014`（账号被标记）时，换备用账号窗口补跑剩余账号。
 - 增量窗口不要随意调大。翻穿全号是触发风控的主要原因，14 天窗口加每周一次 `--deep` 是实测下来比较稳的节奏。
 - 仅供个人学习与研究，请控制频率，遵守微信读书与微信公众平台的服务条款；由此产生的账号风险自行承担。
 
-## 更多文档
+## 📚 更多文档
 
 - [微信读书全量提取流程.md](./微信读书全量提取流程.md)，抓取/汇总的完整流程、参数与风控处理细节
 - [Ubuntu24.04部署说明.md](./Ubuntu24.04部署说明.md)，从零部署（Chrome、uv、Docker、定时任务）
 - [web/README.md](./web/README.md)，网页看板的设计细节（账号体系、点击状态同步、容器化）
 - [每日更新说明.md](./每日更新说明.md)，旧版「微信桌面端缓存提取」流程说明
 
-## 声明
+## ⭐ 支持这个项目
+
+<div align="center">
+
+<img src="assets/star.svg" alt="点个 Star 支持一下" width="640"/>
+
+**如果这个项目帮你的求职季省下了翻公众号的时间，点一个 Star 就是对它最好的支持**——Star 数是项目是否值得持续维护、数据是否值得每日更新的最直接信号。
+
+[![GitHub stars](https://img.shields.io/github/stars/dw763j/weread-job-seek?style=for-the-badge&logo=github&color=facc15)](https://github.com/dw763j/weread-job-seek/stargazers)
+
+[![Star History Chart](https://api.star-history.com/svg?repos=dw763j/weread-job-seek&type=Date)](https://star-history.com/#dw763j/weread-job-seek&Date)
+
+</div>
+
+## 📄 声明
 
 本项目与腾讯、微信读书、微信公众平台无任何关联；所有文章链接均来自微信读书网页版公开接口的返回结果，版权归原公众号所有。招聘信息以各官方公众号原文为准。
+
+---
+
+<div align="center">
+
+**MIT License** © 2026 [dw763j](https://github.com/dw763j)
+
+</div>
