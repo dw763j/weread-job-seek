@@ -14,8 +14,12 @@ import re
 import time
 import urllib.request
 import html as htmllib
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
+
+# 宣讲会省份推断映射的唯一事实源在 server_common（bootstrap 的 geo 字段同源下发前端）
+from server_common import ACCOUNT_PROVINCES, CITY_PROVINCES, PROVINCES
 
 HERE = Path(__file__).resolve().parent
 PROJECT_ROOT = HERE.parent
@@ -32,25 +36,36 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
 
 SLICE_H = 2000
 MAX_W = 1000
-POSTER_MIN = 150        # 正文短于该字数视为海报式，需要读图
+MAX_IMAGES = 20         # 单组最多下载多少张文章图片
 MAX_SLICES = 10         # 单组最多送多少张切片给 GLM
 DEFAULT_CONCURRENCY = 10
 
-JUDGE_PROMPT = """你是招聘信息筛选助手。下面是一篇微信公众号招聘文章（日期 {date}，来源公众号：{account}，标题：{title}）。
+# 微信反爬验证页/删除页的标记：命中说明这次没抓到正文，应记为可重试失败而不是"无内容"
+BLOCK_MARKERS = ("当前环境异常", "完成验证后即可继续访问", "此内容因违规", "该内容已被发布者删除")
+
+
+class FetchBlockedError(RuntimeError):
+    """微信返回验证/删除页，正文暂时抓不到；应落盘为可重试的失败条目，下次运行自动补析。"""
+
+
+JUDGE_PROMPT = """你是招聘信息提取助手。下面是一篇微信公众号文章（日期 {date}，来源公众号：{account}，标题：{title}）。
 {正文块}
 {二维码块}
-{图片说明}请完整阅读全部内容，只输出一个 JSON 对象（不要输出其他文字）：
+{图片说明}请完整阅读全部内容（图片与正文同样重要，岗位表、时间地点常在长图里），只输出一个 JSON 对象（不要输出其他文字）：
 {{
   "保留": true 或 false,
   "招聘单位": "单位全称",
-  "摘要": "一句话说明这篇招聘",
+  "摘要": "一句话说明这篇内容",
   "招聘对象": "如 2027届本硕博",
-  "岗位列表": [{{"岗位": "...", "类别": "计算机类 或 其他（注明方向）", "地点": "城市"}}],
+  "岗位列表": [{{"岗位": "...", "类别": "方向，如 软件开发/计算机/电子信息/网络安全/机械/土木/医护/教师/行政", "地点": "城市"}}],
   "工作地点": "城市汇总",
   "报名方式": "网申链接/邮箱，原样写出",
+  "宣讲会": {{"是宣讲会": false, "时间": "", "地点": "", "多公司": false}},
   "跳过原因": "不保留时的原因"
 }}
-判断标准：岗位中包含软件工程/计算机/软件开发/网络安全/人工智能/大数据类 → 保留 true；教师、医护、纯活动通知、就业宣传、纯机械/土木等非计算机类 → false，并在"跳过原因"说明。软件/计算机类岗位排在岗位列表前面，最多列 8 条。"""
+判断标准：凡面向求职者的招聘信息——任何方向的岗位招聘、校园招聘、宣讲会/招聘会/双选会/组团招聘通知——都保留 true，并完整提取岗位列表，不限专业方向（教师、医护、机械、土木等同样保留）；跳过 false 的只有：与招聘无关的内容（纯活动通知、政策宣传、新闻资讯、就业宣传稿），以及**面向用人单位/企业的参会邀请函**（邀请企业报名设摊的，不是给求职者看的，跳过原因注明"面向用人单位的邀请函"）。
+"宣讲会"字段：正文中出现的面向毕业生的线下宣讲会、招聘会、双选会、组团招聘等场次都要填——即使文章主体是网申招聘（宣讲只是其中一场活动），也要提取"时间"（如 9月12日 14:00-16:30）和"地点"（省+市+场馆，原文怎么写就怎么提取）；完全没有线下活动信息才填 false。
+"多公司"：多家不同用人单位联合参加同一活动（组团招聘、大型双选会、巡回招聘会等）填 true；单一公司举办的人才日/专场活动（即使同时包含宣讲与双选环节）填 false。岗位列表最多列 8 条。"""
 
 
 # ---------- 配置 ----------
@@ -128,6 +143,17 @@ def strip_to_text(fragment: str) -> str:
 
 def scrape_article(url: str) -> dict:
     page = http_get(url)
+    marker = next((m for m in BLOCK_MARKERS if m in page), None)
+    if marker:
+        # 反爬验证页是正常的 200 响应；退避重试几次，仍命中就抛给上层记为可重试失败
+        for delay in (5, 10):
+            time.sleep(delay)
+            page = http_get(url)
+            marker = next((m for m in BLOCK_MARKERS if m in page), None)
+            if marker is None:
+                break
+    if marker:
+        raise FetchBlockedError(f"微信返回验证/删除页（{marker}）")
     m = re.search(r'<span class="js_title_inner">(.*?)</span>', page, re.S)
     title = re.sub(r"<[^>]+>", "", m.group(1)).strip() if m else None
     m2 = re.search(r'var msg_source_url\s*=\s*[\'"]([^\'"]+)[\'"]', page)
@@ -151,6 +177,41 @@ def download_images(urls: list[str], out_dir: Path) -> list[str]:
                 continue
         paths.append(str(dest))
     return paths
+
+
+# ---------- 图片处理（下载、二维码、切片） ----------
+
+def open_image(path: str):
+    try:
+        return Image.open(path).convert("RGB")
+    except Exception:
+        return None
+
+
+def collect_image_inputs(urls: list[str], cache_dir: Path) -> tuple[list, list[str]]:
+    """下载文章图片并做本地处理，返回 (送模型的切片列表, 二维码解码结果)。
+
+    岗位表、时间地点常在长图里，因此不再按正文字数决定是否读图：有图就读。
+    二维码对所有下载图解码（本地、便宜）；切片先过滤图标/分隔线等装饰图，
+    再按面积降序排序（稳定排序保持同一张图内部的先后），配合 MAX_SLICES 截断。
+    """
+    if Image is None or zxingcpp is None or not urls:
+        return [], []
+    slices: list = []
+    qr_urls: list[str] = []
+    for path in download_images(urls[:MAX_IMAGES], cache_dir):
+        for u in decode_qr(path):
+            if u not in qr_urls:
+                qr_urls.append(u)
+        im = open_image(path)
+        if im is None:
+            continue
+        w, h = im.size
+        if (h < 100 and w < 200) or h < 60 or w < 60:
+            continue  # 图标、分隔线等装饰图
+        slices.extend(slice_image(im))
+    slices.sort(key=lambda im: im.size[0] * im.size[1], reverse=True)
+    return slices, qr_urls
 
 
 # ---------- 二维码解码（整图 → 缩图 → 滑窗） ----------
@@ -193,8 +254,7 @@ def decode_qr(path: str) -> list[str]:
 
 # ---------- GLM 识别 ----------
 
-def slice_image(path: str) -> list:
-    im = Image.open(path).convert("RGB")
+def slice_image(im) -> list:
     w, h = im.size
     if w > MAX_W:
         im = im.resize((MAX_W, int(h * MAX_W / w)), Image.LANCZOS)
@@ -266,6 +326,82 @@ def glm_analyze(api_base: str, model: str, api_key: str,
 # 只匹配纯 ASCII、无空白的 URL 片段：遇到中文标点/汉字/空格即停
 URL_CANDIDATE_RE = re.compile(r"https?://[!-~]+")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+# ---------- 宣讲会结构化 ----------
+
+FAIR_YMD_RE = re.compile(r"(\d{4})\s*[年.\-/]\s*(\d{1,2})\s*[月.\-/]\s*(\d{1,2})")
+FAIR_MD_RE = re.compile(r"(\d{1,2})\s*月\s*(\d{1,2})\s*日?")
+FAIR_NUMERIC_MD_RE = re.compile(r"(?<!\d)(\d{1,2})[.\-/](\d{1,2})(?!\d)")
+
+
+def parse_fair_date(time_text: str, publish_date: str) -> str:
+    """把宣讲会时间文本解析为 ISO 日期（YYYY-MM-DD），解析不出返回空串。
+
+    年份默认取文章发布年份；解析结果早于发布日（跨年场景，如 12 月发的"1月5日"）时进一年。
+    """
+    if not time_text:
+        return ""
+    m = FAIR_YMD_RE.search(time_text)
+    if m:
+        year, month, day = int(m[1]), int(m[2]), int(m[3])
+    else:
+        m = FAIR_MD_RE.search(time_text) or FAIR_NUMERIC_MD_RE.search(time_text)
+        if not m:
+            return ""
+        month, day = int(m[1]), int(m[2])
+        year = int(publish_date[:4]) if len(publish_date) >= 4 and publish_date[:4].isdigit() else 0
+        if not year:
+            return ""
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return ""
+    try:
+        parsed = datetime(year, month, day)
+        if len(publish_date) >= 10:
+            try:
+                published = datetime.strptime(publish_date[:10], "%Y-%m-%d")
+                # 跨年推断只认"年末发的年初活动"（12 月发的 1月5日 → 明年）；
+                # 发布前的开场日期（9月8日发的"9月7日起"系列宣讲）保持当年
+                if published.month - parsed.month >= 8:
+                    parsed = datetime(year + 1, month, day)
+            except ValueError:
+                pass
+        return parsed.strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
+def infer_province(location: str, time_text: str, accounts: list[str]) -> str:
+    """宣讲会省份推断：地点文本扫省份/城市 → 时间文本扫（有的把地点写进时间）→ 公众号所属高校省份兜底。"""
+    for text in (location, time_text):
+        hit = next((p for p in PROVINCES if p in text), None)
+        if hit:
+            return hit
+    for text in (location, time_text):
+        for city, province in CITY_PROVINCES.items():
+            if city in text:
+                return province
+    for account in accounts:
+        if account in ACCOUNT_PROVINCES:
+            return ACCOUNT_PROVINCES[account]
+    return ""
+
+
+def build_fair(parsed: dict, publish_date: str, accounts: list[str]) -> dict | None:
+    """从 GLM 输出里取"宣讲会"对象，整理成 entry 的 fair 字段；非宣讲会返回 None。"""
+    raw = parsed.get("宣讲会")
+    if not isinstance(raw, dict) or not raw.get("是宣讲会"):
+        return None
+    time_text = str(raw.get("时间") or "").strip()
+    location = str(raw.get("地点") or "").strip()
+    return {
+        "is_fair": True,
+        "time": time_text,
+        "location": location,
+        "province": infer_province(location, time_text, accounts),
+        "multi_company": bool(raw.get("多公司")),
+        "date": parse_fair_date(time_text, publish_date),
+    }
 
 
 def sanitize_apply_url(raw: str, fallback: str | None = None) -> str:

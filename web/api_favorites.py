@@ -11,12 +11,14 @@ from database import (
     collection_rows,
     favorite_index,
     favorite_rows,
+    group_state_index,
     open_db,
 )
 from server_common import (
     GROUP_ID_RE,
     MAX_COLLECTION_NAME,
     MAX_COLLECTIONS,
+    MAX_URL_LENGTH,
     body_int,
     iso_now,
 )
@@ -27,7 +29,13 @@ def favorites_payload(database: sqlite3.Connection, user_id: int) -> dict[str, A
         "collections": collection_rows(database, user_id),
         "items": favorite_rows(database, user_id),
         "favorites": favorite_index(database, user_id),
+        # 分组级投递意向（已投递/不投递），看板与收藏页共用
+        "group_states": group_state_index(database, user_id),
     }
+
+
+# group_states.applied 列的取值：0 未标记 / 1 已投递 / 2 不投递
+APPLIED_STATUS = {"none": 0, "applied": 1, "skipped": 2}
 
 
 class ApiFavoritesMixin:
@@ -69,6 +77,18 @@ class ApiFavoritesMixin:
             if collection_id is not None and (isinstance(collection_id, bool) or not isinstance(collection_id, int)):
                 self.send_json({"error": "无效的收藏分组"}, HTTPStatus.BAD_REQUEST)
                 return
+            # 快照 AI 筛选提取的报名链接与结构化信息：之后文章移出看板，
+            # 收藏页仍能直达网申/邮件报名、展示完整岗位信息
+            screen_index = self.server.screens.load()
+            screen = next((screen_index[url] for url in group["urls"] if url in screen_index), None)
+            apply_url = str(screen.get("apply_url") or "")[:MAX_URL_LENGTH] if screen else ""
+            snapshot = ""
+            if screen:
+                snapshot = json.dumps(
+                    {key: screen[key] for key in ("unit", "intro", "recruit_target", "positions", "locations")
+                     if screen.get(key) is not None},
+                    ensure_ascii=False,
+                )
             with open_db(self.server.config.database) as database:
                 if collection_id is not None:
                     owned = database.execute(
@@ -80,16 +100,25 @@ class ApiFavoritesMixin:
                 # 收藏时快照标题/链接等字段：之后抓取数据更新甚至文章下线，收藏列表仍可打开原文
                 database.execute(
                     """
-                    INSERT INTO favorites(user_id, group_id, collection_id, title, url, account, date, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO favorites(user_id, group_id, collection_id, title, url, account, date, created_at, apply_url, screen_snapshot)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, group_id) DO UPDATE SET
                       collection_id = excluded.collection_id,
                       title = excluded.title, url = excluded.url,
                       account = excluded.account, date = excluded.date,
-                      created_at = excluded.created_at
+                      created_at = excluded.created_at, apply_url = excluded.apply_url,
+                      screen_snapshot = excluded.screen_snapshot
                     """,
                     (user["id"], group_id, collection_id, group["title"], group["url"],
-                     group["account"], group["date"], iso_now()),
+                     group["account"], group["date"], iso_now(), apply_url, snapshot),
+                )
+                # 收藏即已读：收藏的文章以后从收藏页看，不再占用看板的未读列表
+                database.executemany(
+                    """
+                    INSERT INTO clicks(user_id, url, clicked_at) VALUES (?, ?, ?)
+                    ON CONFLICT(user_id, url) DO UPDATE SET clicked_at = excluded.clicked_at
+                    """,
+                    [(user["id"], url, iso_now()) for url in group["urls"]],
                 )
         else:
             with open_db(self.server.config.database) as database:
@@ -97,6 +126,56 @@ class ApiFavoritesMixin:
                     "DELETE FROM favorites WHERE user_id = ? AND group_id = ?", (user["id"], group_id)
                 )
         with open_db(self.server.config.database) as database:
+            payload = {"ok": True, **favorites_payload(database, user["id"])}
+        self.send_json(payload)
+
+    def handle_group_applied(self) -> None:
+        """分组级投递标记（已投递 / 不投递 / 清除）：挂在文章分组上，与收藏解耦，
+        看板卡片与收藏卡片都能标记；点击即保存并高亮，不做其他动作。"""
+        user = self.require_user()
+        if user is None:
+            return
+        try:
+            body = self.read_json()
+        except (ValueError, json.JSONDecodeError) as error:
+            self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
+            return
+        group_id = str(body.get("group_id", ""))
+        status = body.get("status")
+        if not GROUP_ID_RE.fullmatch(group_id) or status not in APPLIED_STATUS:
+            self.send_json({"error": "无效的投递标记"}, HTTPStatus.BAD_REQUEST)
+            return
+        # 标记已投递/不投递 = 已做决定，整组顺带标已读（取消标记不回退未读）
+        group = None
+        if status != "none":
+            try:
+                _, groups_by_id = self.server.articles.load()
+                group = groups_by_id.get(group_id)
+            except Exception:
+                group = None
+        with open_db(self.server.config.database) as database:
+            if status == "none":
+                database.execute(
+                    "DELETE FROM group_states WHERE user_id = ? AND group_id = ?",
+                    (user["id"], group_id),
+                )
+            else:
+                database.execute(
+                    """
+                    INSERT INTO group_states(user_id, group_id, applied, updated_at) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id, group_id) DO UPDATE SET
+                      applied = excluded.applied, updated_at = excluded.updated_at
+                    """,
+                    (user["id"], group_id, APPLIED_STATUS[status], iso_now()),
+                )
+                if group:
+                    database.executemany(
+                        """
+                        INSERT INTO clicks(user_id, url, clicked_at) VALUES (?, ?, ?)
+                        ON CONFLICT(user_id, url) DO UPDATE SET clicked_at = excluded.clicked_at
+                        """,
+                        [(user["id"], url, iso_now()) for url in group["urls"]],
+                    )
             payload = {"ok": True, **favorites_payload(database, user["id"])}
         self.send_json(payload)
 

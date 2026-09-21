@@ -8,7 +8,6 @@
   api_session     HTTP 基座：路由分发、JSON/静态响应、会话与登录
   api_articles    文章看板端点（bootstrap/已读/偏好/AI 筛选任务）
   api_favorites   收藏与收藏分组端点
-  api_applications 投递管理端点
   server.py       本文件：组装 RequestHandler 与 AppServer、命令行入口
 """
 
@@ -21,7 +20,6 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from api_applications import ApiApplicationsMixin
 from api_articles import ApiArticlesMixin
 from api_favorites import ApiFavoritesMixin
 from api_session import CoreHandler
@@ -69,7 +67,7 @@ class AppServer(ThreadingHTTPServer):
         super().__init__(address, RequestHandler)
 
 
-class RequestHandler(ApiApplicationsMixin, ApiFavoritesMixin, ApiArticlesMixin, CoreHandler, BaseHTTPRequestHandler):
+class RequestHandler(ApiFavoritesMixin, ApiArticlesMixin, CoreHandler, BaseHTTPRequestHandler):
     server: AppServer
 
 

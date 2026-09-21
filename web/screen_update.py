@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
-"""对汇总去重后的招聘文章做 AI 筛选（识别计算机类岗位）。
+"""对汇总去重后的招聘文章做 AI 筛选与结构化提取（不限专业方向，另识别宣讲会）。
 
 用法:
-    uv run python web/screen_update.py 2026-08-31          # 筛选某一天（已分析过的组复用旧结果，只补缺）
-    uv run python web/screen_update.py --all               # 批量补筛全部日期（每日更新后跑一次兜底）
+    uv run python web/screen_update.py 2026-08-31          # 筛选某一天（可复用的旧结果直接沿用，只补缺/重析过时项）
+    uv run python web/screen_update.py --all               # 批量筛全部日期（每日更新后跑一次兜底）
     uv run python web/screen_update.py 2026-08-31 --force  # 忽略旧结果，重新分析该日期
     uv run python web/screen_update.py --all --force       # 全部重析（花费大，慎用）
 
 流程:
   1. 直接读取 output/weread_extract/汇总-去重组.json（与网页服务同源）；
   2. 逐组抓取微信文章：正文文本、图片、阅读原文链接（msg_source_url）；
-  3. 正文较短（海报式推送）时下载图片，zxing-cpp 解码二维码（整图→缩图→滑窗）；
-  4. 调 GLM 结构化识别，判定是否招软件工程/计算机类岗位，产出岗位/地点/报名方式；
-  5. 结果合并写入 web/data/screen_results.json（按日期组织 kept/skipped），逐日落盘、
-     断点可续，网页服务监听该文件变化、下次请求自动读到新结果；
+     抓取命中微信验证/删除页时退避重试，仍失败记为可重试失败条目（下次运行自动补析）；
+  3. 有图必读：下载全部文章图片（带上限），zxing-cpp 解码二维码，长图切片后连同正文
+     一起送 GLM（不再按正文字数决定是否读图——岗位表和宣讲会时间地点常在图片里）；
+  4. 调 GLM 结构化识别：凡招聘信息（任意专业方向）都保留并完整提取岗位/地点/报名方式，
+     另提取宣讲会信息（是否宣讲会/双选会/组团招聘、时间、地点、多公司），仅纯活动通知、
+     政策宣传等非招聘内容跳过；
+  5. 结果合并写入 web/data/screen_results.json（按日期组织 kept/skipped），带 v:2 版本
+     标记，逐日落盘、断点可续，网页服务监听该文件变化、下次请求自动读到新结果；
   6. 已分析过的同链接/同标题文章（含跨日期重复）直接复用旧结果，不重复识别。
+     复用规则见 is_reusable：v1 旧结果里"被旧标准跳过的招聘"与"缺宣讲会字段的宣讲类文章"
+     会在常规运行中自动重析，无需 --force（首次升级后的一次 --all 会补析较多旧条目，属预期）。
 
-抓取、二维码解码与 GLM 识别的具体实现在同目录 screen_lib.py；本文件只做按日期的
-编排、结果复用与落盘。
+抓取、图片处理、二维码解码、宣讲会解析与 GLM 识别的具体实现在同目录 screen_lib.py；
+本文件只做按日期的编排、结果复用与落盘。
 
 分析结果对所有用户通用；每位用户在网页端保存的意向城市/方向关键词只影响
 自己的高亮与「符合我的筛选」视图，不改变这里的判定。
@@ -25,29 +31,29 @@
 GLM 端点复用 .env 里的 DEDUP_API_BASE / DEDUP_MODEL / DEDUP_API_KEY，
 也可用 SCREEN_API_BASE / SCREEN_MODEL / SCREEN_API_KEY 单独指定。
 并发数默认 10，可用环境变量 WR_SCREEN_CONCURRENCY 或 --concurrency 调整。
-zxing-cpp 与 pillow 未安装时自动降级为纯文本分析（海报式推送不读图）。
+zxing-cpp 与 pillow 未安装时自动降级为纯文本分析（不读图、不解码二维码）。
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
+import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from screen_lib import (  # noqa: F401  （sanitize_apply_url 供测试导入）
     Image,
-    POSTER_MIN,
+    zxingcpp,
     api_config,
+    build_fair,
+    collect_image_inputs,
     concurrency_config,
-    decode_qr,
-    download_images,
     glm_analyze,
     sanitize_apply_url,
     scrape_article,
-    slice_image,
-    zxingcpp,
 )
 from stores import ArticleStore
 
@@ -56,9 +62,53 @@ PROJECT_ROOT = HERE.parent
 SOURCE_PATH = PROJECT_ROOT / "output" / "weread_extract" / "汇总-去重组.json"
 RESULTS_PATH = HERE / "data" / "screen_results.json"
 CACHE_ROOT = HERE / "data" / "screen-cache"
+CACHE_RETENTION_DAYS = 14   # 图片缓存只服务当次分析（重析会重新抓取），过期即清理
+SAVE_INTERVAL_SECONDS = 60  # 结果落盘节流：断点粒度从"每日期"放宽到"每分钟"，结束时强制落盘
+
+
+def cleanup_cache() -> None:
+    """删除过期的图片缓存目录。有图必读之后缓存增长很快，而分析完成后图片
+    几乎不会复用（重析会重新抓页面），留着只占磁盘。
+    按目录名（YYYYMMDD）判断而不是 mtime：重析会在旧日期目录下新建子目录，
+    把目录 mtime 刷成当天。"""
+    if not CACHE_ROOT.exists():
+        return
+    cutoff = (datetime.now() - timedelta(days=CACHE_RETENTION_DAYS)).strftime("%Y%m%d")
+    removed = 0
+    for child in CACHE_ROOT.iterdir():
+        try:
+            if child.is_dir() and child.name.isdigit() and len(child.name) == 8 and child.name < cutoff:
+                shutil.rmtree(child, ignore_errors=True)
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        print(f"已清理 {removed} 个超过 {CACHE_RETENTION_DAYS} 天的图片缓存目录", flush=True)
 
 
 # ---------- 结果复用（跨日期的重复文章不再分析） ----------
+
+# 标题命中这些关键词的文章按宣讲会处理：v1 旧结果缺宣讲会字段，需要按新 prompt 重析；
+# 前端对未筛选/旧数据也用同一组关键词兜底识别宣讲会。
+FAIR_TITLE_RE = re.compile(r"宣讲|双选|组团|线下招聘|招聘会")
+
+# 现行结果 schema 版本：v2 = 不分计算机类、全量读图、带宣讲会字段。
+# v1 结果按 is_reusable 的规则部分复用，其余在常规 --all 运行中自动补析（无需 --force）。
+RESULT_VERSION = 2
+
+
+def is_reusable(kind: str, entry: dict, title: str) -> bool:
+    """判断一条已有结果能否直接复用。
+
+    - v2 结果：可复用；
+    - v1 kept（旧 prompt，但提取字段同构）且标题不含宣讲关键词：可复用；
+    - v1 skipped（旧标准把非计算机类招聘错误跳过、且没有提取信息）、
+      失败条目（无 v 标记，需人工复核/重试）、标题命中宣讲关键词的 v1 kept：重析。
+    """
+    if entry.get("v") == RESULT_VERSION:
+        return True
+    return kind == "kept" and not FAIR_TITLE_RE.search(title)
+
 
 def build_reuse_index(results: dict) -> tuple[dict, dict]:
     """返回 (url -> (kind, entry), 标题 -> (kind, entry))，基于已有全部结果。"""
@@ -84,11 +134,13 @@ def index_lookup(by_url: dict, by_title: dict, group: dict) -> tuple[str, dict] 
 
 
 def index_add(by_url: dict, by_title: dict, kind: str, entry: dict) -> None:
+    # 直接覆盖而不是 setdefault：重析后的新结果要替换索引里的旧 v1 条目，
+    # 否则同链接的跨日期重复组还会复用到已判定过时的结果。
     for url in entry.get("urls") or ([entry["article_url"]] if entry.get("article_url") else []):
-        by_url.setdefault(url, (kind, entry))
+        by_url[url] = (kind, entry)
     title = (entry.get("title") or "").strip()
     if title:
-        by_title.setdefault(title, (kind, entry))
+        by_title[title] = (kind, entry)
 
 
 def merge_entry(entry: dict, group: dict) -> dict:
@@ -104,22 +156,18 @@ def merge_entry(entry: dict, group: dict) -> dict:
 
 def analyze_group(api_base: str, model: str, api_key: str,
                   date: str, group: dict, day_cache: Path) -> tuple[bool, dict]:
-    """抓取并分析一个组，返回 (保留?, 条目)。图片缓存放该组专属子目录，避免并发互相覆盖。"""
+    """抓取并分析一个组，返回 (保留?, 条目)。图片缓存放该组专属子目录，避免并发互相覆盖。
+
+    抓取被微信验证页拦截时抛 FetchBlockedError，由上层记为可重试的失败条目。
+    """
     info = scrape_article(group["url"])
-    local_imgs: list = []
-    qr_urls: list[str] = []
-    if len(info["text"]) < POSTER_MIN and Image is not None and zxingcpp is not None:
-        for path in download_images(info["images"], day_cache / group["id"][:12] / "img"):
-            local_imgs.extend(slice_image(path))
-            for u in decode_qr(path):
-                if u not in qr_urls:
-                    qr_urls.append(u)
+    local_imgs, qr_urls = collect_image_inputs(info["images"], day_cache / group["id"][:12] / "img")
     info["qr_urls"] = qr_urls
     parsed = glm_analyze(api_base, model, api_key, date, group["account"], group["title"], info, local_imgs)
     accounts = list(dict.fromkeys(
         [group["account"]] + [m["account"] for m in group["members"]]))
     if parsed.get("保留"):
-        return True, {
+        entry = {
             "unit": parsed.get("招聘单位") or group["title"],
             "intro": parsed.get("摘要") or "",
             "title": group["title"],
@@ -135,13 +183,19 @@ def analyze_group(api_base: str, model: str, api_key: str,
             "article_url": group["url"],
             "urls": group["urls"],
             "note": "",
+            "v": RESULT_VERSION,
         }
+        fair = build_fair(parsed, date, accounts)
+        if fair:
+            entry["fair"] = fair
+        return True, entry
     return False, {
         "account": group["account"],
         "title": group["title"],
         "article_url": group["url"],
         "urls": group["urls"],
-        "reason": parsed.get("跳过原因") or "非计算机类岗位",
+        "reason": parsed.get("跳过原因") or "非招聘信息",
+        "v": RESULT_VERSION,
     }
 
 
@@ -166,7 +220,19 @@ def load_results() -> dict:
     return {"days": {}}
 
 
-def save_results(results: dict) -> None:
+_last_save = 0.0
+
+
+def save_results(results: dict, force: bool = False) -> None:
+    """落盘筛选结果；按时间节流（全量重写整个文件，逐日期都写是 O(天数×体积)）。
+
+    force=True 在运行结束/异常退出时调用，保证断点不丢：中途被杀最多丢一个
+    节流窗口内的进度，下次运行会自动补析。
+    """
+    global _last_save
+    if not force and time.time() - _last_save < SAVE_INTERVAL_SECONDS:
+        return
+    _last_save = time.time()
     results["generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     RESULTS_PATH.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -181,12 +247,13 @@ def screen_date_concurrent(date: str, day_groups: list[dict], results: dict, by_
     pending: list[dict] = []
     for group in day_groups:
         hit = index_lookup(by_url, by_title, group)
-        if hit is not None:
+        if hit is not None and is_reusable(hit[0], hit[1], group["title"]):
             kind, entry = hit
             merged = merge_entry(entry, group)
             (kept if kind == "kept" else skipped).append(merged)
             index_add(by_url, by_title, kind, merged)
         else:
+            # 旧 v1 结果不可直接复用（旧标准跳过的招聘、失败条目、缺宣讲会字段的宣讲类）
             pending.append(group)
 
     done = 0
@@ -268,7 +335,7 @@ def main() -> int:
         by_url, by_title = build_reuse_index(results)
 
     if Image is None or zxingcpp is None:
-        print("提示：未安装 zxing-cpp / pillow，海报式推送将不读图、不解码二维码。", flush=True)
+        print("提示：未安装 zxing-cpp / pillow，文章图片将不读图、不解码二维码。", flush=True)
     api_base, model, api_key = api_config()
     print(f"GLM 端点：{api_base}（模型 {model}）", flush=True)
 
@@ -277,12 +344,18 @@ def main() -> int:
     # 否则回填到旧日期的文章永远筛不到；全量重析仍用 --force。
     overall_total = sum(len(groups_by_date.get(date, [])) for date in dates)
 
+    cleanup_cache()
+
     offset = 0
-    for date in dates:
-        day_groups = groups_by_date.get(date, [])
-        screen_date_concurrent(date, day_groups, results, by_url, by_title,
-                               api_base, model, api_key, concurrency, offset, overall_total)
-        offset += len(day_groups)
+    try:
+        for date in dates:
+            day_groups = groups_by_date.get(date, [])
+            screen_date_concurrent(date, day_groups, results, by_url, by_title,
+                                   api_base, model, api_key, concurrency, offset, overall_total)
+            offset += len(day_groups)
+    finally:
+        # 结束或异常中断都强制落盘一次，保住断点
+        save_results(results, force=True)
 
     kept_total = sum(len(day.get("kept", [])) for day in results["days"].values())
     skip_total = sum(len(day.get("skipped", [])) for day in results["days"].values())

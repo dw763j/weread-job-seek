@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 from server_common import (
-    APPLICATION_STATUS_KEYS,
     DEFAULT_CITIES,
     parse_json_str_list,
 )
@@ -56,6 +55,7 @@ def initialize_database(path: Path) -> None:
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 cities TEXT NOT NULL DEFAULT '[]',
                 keywords TEXT NOT NULL DEFAULT '[]',
+                pinned_provinces TEXT NOT NULL DEFAULT '["北京"]',
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (user_id)
             );
@@ -75,24 +75,45 @@ def initialize_database(path: Path) -> None:
                 account TEXT NOT NULL,
                 date TEXT NOT NULL,
                 created_at TEXT NOT NULL,
+                -- 0 未标记 / 1 已投递 / 2 不投递（互斥，单列存三态；历史遗留，
+                -- 现役的分组级标记在 group_states 表，此列仅作迁移来源）
+                applied INTEGER NOT NULL DEFAULT 0 CHECK (applied IN (0, 1, 2)),
+                apply_url TEXT NOT NULL DEFAULT '',
+                -- 收藏时快照的 AI 提取信息（unit/positions 等的 JSON）：
+                -- 文章移出看板后收藏页仍能展示完整岗位信息
+                screen_snapshot TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (user_id, group_id)
             );
             CREATE INDEX IF NOT EXISTS idx_favorites_collection ON favorites(user_id, collection_id);
-            CREATE TABLE IF NOT EXISTS applications (
-                id INTEGER PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS group_states (
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                company TEXT NOT NULL,
-                job_url TEXT NOT NULL DEFAULT '',
-                article_group_id TEXT NOT NULL DEFAULT '',
-                article_url TEXT NOT NULL DEFAULT '',
-                article_title TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'applied',
-                history TEXT NOT NULL DEFAULT '[]',
-                note TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                group_id TEXT NOT NULL,
+                -- 分组级投递意向（与收藏解耦）：0 未标记 / 1 已投递 / 2 不投递
+                applied INTEGER NOT NULL DEFAULT 0 CHECK (applied IN (0, 1, 2)),
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, group_id)
             );
-            CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(user_id, updated_at);
+            """
+        )
+        # 旧库迁移：preferences 建表后新增过 pinned_provinces 列；favorites 建表后
+        # 新增过 applied（已投递标记）与 apply_url（报名链接快照）列。
+        # 重复执行会报"列已存在"，忽略即可
+        for migration in (
+            "ALTER TABLE preferences ADD COLUMN pinned_provinces TEXT NOT NULL DEFAULT '[\"北京\"]'",
+            "ALTER TABLE favorites ADD COLUMN applied INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE favorites ADD COLUMN apply_url TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE favorites ADD COLUMN screen_snapshot TEXT NOT NULL DEFAULT ''",
+        ):
+            try:
+                database.execute(migration)
+            except sqlite3.OperationalError:
+                pass
+        # 一次性迁移：applied（已投递/不投递）原先挂在收藏行上，改为分组级统一状态；
+        # OR IGNORE 保证 group_states 里已有的新标记不被旧收藏值覆盖
+        database.execute(
+            """
+            INSERT OR IGNORE INTO group_states(user_id, group_id, applied, updated_at)
+            SELECT user_id, group_id, applied, created_at FROM favorites WHERE applied > 0
             """
         )
         database.execute("PRAGMA optimize")
@@ -107,7 +128,8 @@ def clicked_urls(database_path: Path, user_id: int) -> dict[str, str]:
 
 
 def user_preferences(database_path: Path, user_id: int) -> dict[str, list[str]]:
-    """读取用户筛选偏好；从未设置过时返回默认意向城市（无方向关键词）。"""
+    """读取用户筛选偏好；从未设置过时返回默认意向城市（无方向关键词）。
+    pinned_provinces 列是宣讲会页"置顶省份"时期的遗留，现已改省份筛选，不再读写。"""
     with open_db(database_path) as database:
         row = database.execute(
             "SELECT cities, keywords FROM preferences WHERE user_id = ?", (user_id,)
@@ -138,32 +160,25 @@ def favorite_index(database: sqlite3.Connection, user_id: int) -> dict[str, Any]
 def favorite_rows(database: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:
     rows = database.execute(
         """
-        SELECT group_id, collection_id, title, url, account, date, created_at
+        SELECT group_id, collection_id, title, url, account, date, created_at, apply_url, screen_snapshot
         FROM favorites WHERE user_id = ? ORDER BY created_at DESC, group_id
         """,
         (user_id,),
     ).fetchall()
-    return [dict(row) for row in rows]
+    items = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["screen_snapshot"] = json.loads(row["screen_snapshot"]) if row["screen_snapshot"] else None
+        except json.JSONDecodeError:
+            item["screen_snapshot"] = None
+        items.append(item)
+    return items
 
 
-def application_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-    try:
-        history = json.loads(row["history"]) if row["history"] else []
-    except json.JSONDecodeError:
-        history = []
-    if not isinstance(history, list):
-        history = []
-    events = [event for event in history if isinstance(event, dict) and event.get("key") in APPLICATION_STATUS_KEYS]
-    return {
-        "id": row["id"],
-        "company": row["company"],
-        "job_url": row["job_url"],
-        "article_group_id": row["article_group_id"],
-        "article_url": row["article_url"],
-        "article_title": row["article_title"],
-        "status": row["status"],
-        "history": events,
-        "note": row["note"],
-        "created_at": row["created_at"],
-        "updated_at": row["updated_at"],
-    }
+def group_state_index(database: sqlite3.Connection, user_id: int) -> dict[str, int]:
+    """分组级投递意向索引：文章组 id -> applied（1 已投递 / 2 不投递），未标记的不出现。"""
+    rows = database.execute(
+        "SELECT group_id, applied FROM group_states WHERE user_id = ? AND applied > 0", (user_id,)
+    ).fetchall()
+    return {row["group_id"]: row["applied"] for row in rows}

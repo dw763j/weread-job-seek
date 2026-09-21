@@ -1,45 +1,45 @@
-// 文章看板：筛选、文章卡片与分页、已读状态、AI 筛选触发轮询、筛选偏好
+// 文章看板：筛选与分页由后端 /api/articles 完成（按筛选条件分页返回），
+// 本模块负责拉取当前页、渲染卡片/分页器/统计、AI 筛选触发轮询与筛选偏好。
 import { request } from "./api.js";
-import { articleList, emptyState, pager, syncNotice, text } from "./dom.js";
-import { chinaToday, cleanApplyUrl } from "./format.js";
+import { articleList, emptyState, pager, text } from "./dom.js";
 import { favoriteToolbar } from "./favorites.js";
-import { PAGE_SIZE, state } from "./state.js";
+import { updateClick } from "./clicks.js";
+import { locationBadges, screenPositions } from "./screen-info.js";
+import { state } from "./state.js";
 import { registerView } from "./views.js";
-
-function todayReadCount() {
-  const today = chinaToday();
-  return state.groups.filter(
-    (group) => group.clicked_at && group.clicked_at.slice(0, 10) === today
-  ).length;
-}
+import { navigate } from "./router.js";
 
 function renderStats() {
-  const read = state.groups.filter((group) => group.clicked_at).length;
-  const total = state.groups.length;
-  const unread = total - read;
-  document.querySelector("#read-count").textContent = read;
-  document.querySelector("#total-count").textContent = total;
-  document.querySelector("#unread-count").textContent = unread;
-  document.querySelector("#progress-bar").style.width = `${total ? (read / total) * 100 : 0}%`;
-  document.querySelector("#today-read-count").textContent = todayReadCount();
-  document.querySelector("#fw-unread-count").textContent = unread;
+  const stats = state.stats;
+  document.querySelector("#read-count").textContent = stats.read;
+  document.querySelector("#total-count").textContent = stats.total;
+  document.querySelector("#progress-bar").style.width = `${stats.total ? (stats.read / stats.total) * 100 : 0}%`;
+  document.querySelector("#today-read-count").textContent = stats.today_read;
+  // 英雄区大数字与悬浮组件、AI 筛选行的「同时满足 N 篇」同源，
+  // 标签随阅读状态变化；进度条与「X / Y 已浏览」保持全库口径
+  const filteredLabel = { unread: "筛选未读", read: "筛选已读", all: "筛选结果" }[state.filter] || "筛选结果";
+  document.querySelector("#unread-count").textContent = state.board.total;
+  const heroLabel = document.querySelector("#unread-label");
+  if (heroLabel.textContent !== filteredLabel) heroLabel.textContent = filteredLabel;
+  document.querySelector("#hero-filter-number").title =
+    "同时满足当前阅读状态、搜索词、公众号与 AI 筛选条件的文章总数（下方进度条为全库阅读进度）";
+  document.querySelector("#fw-filter-count").textContent = state.board.total;
+  const fwLabelNode = document.querySelector("#fw-filter-label");
+  if (fwLabelNode.textContent !== filteredLabel) fwLabelNode.textContent = filteredLabel;
+  document.querySelector("#fw-filter-item").title =
+    "同时满足当前阅读状态、搜索词、公众号与 AI 筛选条件的文章总数";
   document.querySelector("#floating-widget").hidden = false;
 }
 
-function matches(group) {
-  if (state.filter === "read" && !group.clicked_at) return false;
-  if (state.filter === "unread" && group.clicked_at) return false;
-  if (state.account && group.account !== state.account) return false;
-  if (state.screen === "kept" && group.screen?.kind !== "kept") return false;
-  if (state.screen === "skipped" && group.screen?.kind !== "skipped") return false;
-  if (state.screen === "none" && group.screen) return false;
-  if (state.screen === "mine" && (group.screen?.kind !== "kept" || !matchesMine(group))) return false;
-  if (state.query) {
-    const haystack = [group.title, group.account, ...group.members.map((member) => `${member.title} ${member.account}`)]
-      .join(" ").toLocaleLowerCase("zh-CN");
-    if (!haystack.includes(state.query)) return false;
+// 本会话内的即时状态：服务端页是按查询时刻过滤的，点开/跳过后本地再过滤一次，
+// 保持"点开的变暗保留、跳过的立即消失"直到下次查询
+function visibleItems() {
+  const items = state.board.items;
+  if (state.filter === "unread") {
+    return items.filter((group) => !group.clicked_at || state.sessionViewedIds.has(group.id));
   }
-  return true;
+  if (state.filter === "read") return items.filter((group) => group.clicked_at);
+  return items;
 }
 
 function entryLocations(entry) {
@@ -53,22 +53,6 @@ function firstHitCity(entry) {
   return null;
 }
 
-function matchesMine(group) {
-  const entry = group.screen || {};
-  const { keywords, cities } = state.prefs;
-  let keywordOk = !keywords.length;
-  if (!keywordOk) {
-    const fields = [
-      ...(entry.positions || []).map((position) => `${position.name} ${position.category}`),
-      entry.intro || "", entry.unit || "", group.title,
-    ].join(" ").toLocaleLowerCase("zh-CN");
-    keywordOk = keywords.some((keyword) => fields.includes(keyword.toLocaleLowerCase("zh-CN")));
-  }
-  let cityOk = !cities.length;
-  if (!cityOk) cityOk = Boolean(firstHitCity(entry));
-  return keywordOk && cityOk;
-}
-
 function dateHeading(value) {
   const date = new Date(`${value}T00:00:00+08:00`);
   const weekday = new Intl.DateTimeFormat("zh-CN", { weekday: "short" }).format(date);
@@ -77,63 +61,6 @@ function dateHeading(value) {
   heading.className = "date-heading";
   heading.append(text("h3", "", label), text("span", "", weekday));
   return heading;
-}
-
-function locationBadges(locationText) {
-  const wrap = document.createElement("span");
-  wrap.className = "pos-locs";
-  const raw = (locationText || "").trim();
-  if (!raw || /未标注|待定|不详|^无$/.test(raw)) {
-    wrap.append(text("span", "loc missing", "未标注地点"));
-    return wrap;
-  }
-  const tokens = raw.split(/[、，,;；\/\s]+/).filter(Boolean);
-  for (const token of tokens) {
-    const hit = state.prefs.cities.some((city) => token.includes(city));
-    wrap.append(text("span", hit ? "loc hot" : "loc", token));
-  }
-  return wrap;
-}
-
-function screenPositions(entry) {
-  const block = document.createElement("div");
-  block.className = "screen-info";
-  if (entry.intro || entry.recruit_target) {
-    const intro = document.createElement("p");
-    intro.className = "screen-intro";
-    const parts = [];
-    if (entry.intro) parts.push(entry.intro);
-    if (entry.recruit_target) parts.push(`招聘对象：${entry.recruit_target}`);
-    intro.textContent = parts.join(" · ");
-    block.append(intro);
-  }
-  const positions = entry.positions || [];
-  if (positions.length) {
-    const list = document.createElement("ul");
-    list.className = "screen-positions";
-    for (const position of positions) {
-      const row = document.createElement("li");
-      row.append(text("span", "pos-name", position.name));
-      if (position.category) {
-        row.append(text("span", `pos-cat${/计算机|软件|人工智能|大数据|算法|网络安全|开发|IT/.test(position.category) ? " cs" : ""}`, position.category));
-      }
-      row.append(locationBadges(position.location));
-      list.append(row);
-    }
-    block.append(list);
-  }
-  const applyHref = cleanApplyUrl(entry.apply_url);
-  if (applyHref) {
-    const apply = document.createElement("a");
-    apply.className = "apply-button";
-    apply.href = applyHref;
-    apply.target = "_blank";
-    apply.rel = "noopener";
-    apply.textContent = applyHref.startsWith("mailto:") ? "邮件报名" : "网申 / 报名";
-    block.append(apply);
-  }
-  if (entry.note) block.append(text("p", "screen-note", entry.note));
-  return block;
 }
 
 function createArticle(group) {
@@ -155,13 +82,12 @@ function createArticle(group) {
   meta.append(text("span", "account-pill", group.account));
   if (group.members.length > 1) meta.append(text("span", "duplicate-pill", `${group.members.length} 个来源`));
   if (group.screen?.kind === "kept") {
-    meta.append(text("span", "screen-pill kept", "计算机类"));
     const hitCity = firstHitCity(group.screen);
     if (hitCity) meta.append(text("span", "screen-pill hit", `意向 · ${hitCity}`));
   }
   if (group.screen?.kind === "skipped") {
-    const pill = text("span", "screen-pill skipped", "非计算机类");
-    pill.title = group.screen.reason || "AI 判定为非计算机类岗位";
+    const pill = text("span", "screen-pill skipped", "非招聘");
+    pill.title = group.screen.reason || "AI 判定为与招聘无关的内容";
     meta.append(pill);
   }
 
@@ -220,20 +146,39 @@ function createArticle(group) {
   return card;
 }
 
+export async function fetchBoard() {
+  const params = new URLSearchParams();
+  params.set("status", state.filter);
+  if (state.account) params.set("account", state.account);
+  if (state.screens.size) params.set("screens", [...state.screens].join(","));
+  if (state.query) params.set("q", state.query);
+  params.set("page", String(state.page));
+  // exclude：本会话点开过的文章——未读查询里保留它们（变暗），刷新后自然消失
+  if (state.filter === "unread" && state.sessionViewedIds.size) {
+    params.set("exclude", [...state.sessionViewedIds].join(","));
+  }
+  try {
+    const payload = await request(`/api/articles?${params.toString()}`);
+    state.board = payload;
+    state.page = payload.page;
+  } catch (error) {
+    if (error.status !== 401) return; // 拉取失败保留旧页，不打断界面
+    throw error;
+  }
+  populateScreens();
+  renderArticles();
+}
+
 export function renderArticles() {
   // 保留用户当前展开的“其他来源”面板：整体重建 DOM 前记下展开状态，重建后原样恢复。
-  // 仅在本次页面会话内有效，刷新页面后回到默认折叠。
   const openIds = new Set(
     [...articleList.querySelectorAll("details.sources[open]")].map((d) => d.closest(".article-card")?.dataset.groupId),
   );
-  const visible = state.groups.filter(matches);
-  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
-  state.page = Math.min(Math.max(1, state.page), totalPages);
-  const start = (state.page - 1) * PAGE_SIZE;
-  const pageItems = visible.slice(start, start + PAGE_SIZE);
+  const visible = visibleItems();
+  const totalPages = Math.max(1, state.board.pages);
   articleList.replaceChildren();
   let lastDate = "";
-  for (const group of pageItems) {
+  for (const group of visible) {
     if (group.date !== lastDate) {
       articleList.append(dateHeading(group.date));
       lastDate = group.date;
@@ -243,7 +188,7 @@ export function renderArticles() {
     articleList.append(card);
   }
   emptyState.hidden = visible.length > 0;
-  renderPager(visible.length, totalPages);
+  renderPager(state.board.total, totalPages);
   renderStats();
 }
 
@@ -283,8 +228,7 @@ function renderPager(total, totalPages) {
   const goToPage = (page) => {
     const target = Math.min(Math.max(1, page), totalPages);
     if (target === state.page) return;
-    state.page = target;
-    renderArticles();
+    navigate("articles", { status: state.filter, account: state.account, screens: state.screens, q: state.query, page: target });
     scrollTopToArticles();
   };
 
@@ -343,189 +287,86 @@ function renderPager(total, totalPages) {
   pager.hidden = false;
 }
 
-async function updateClick(group, clicked, background = false) {
-  if (state.pending.has(group.id)) return;
-  const previous = group.clicked_at;
-  group.clicked_at = clicked ? new Date().toISOString() : null;
-  state.pending.add(group.id);
-  renderArticles();
-  try {
-    const payload = await request("/api/clicks", {
-      method: "POST",
-      body: JSON.stringify({ group_id: group.id, clicked }),
-      keepalive: background,
-    });
-    group.clicked_at = payload.clicked_at;
-    syncNotice.textContent = "浏览状态已保存";
-    window.setTimeout(() => { if (syncNotice.textContent === "浏览状态已保存") syncNotice.textContent = ""; }, 1600);
-  } catch (error) {
-    group.clicked_at = previous;
-    syncNotice.textContent = `保存失败：${error.message}`;
-  } finally {
-    state.pending.delete(group.id);
-    renderArticles();
-  }
-}
-
 export function populateAccounts() {
   const select = document.querySelector("#account-filter");
-  const accounts = [...new Set(state.groups.map((group) => group.account))].sort((a, b) => a.localeCompare(b, "zh-CN"));
+  const accounts = state.accounts.map((item) => item.account).sort((a, b) => a.localeCompare(b, "zh-CN"));
   select.replaceChildren(new Option("全部公众号", ""), ...accounts.map((account) => new Option(account, account)));
+  select.value = state.account;
+  if (select.value !== state.account) state.account = "";
 }
+
+// AI 筛选 chips：多选、条件取交集；关键词/城市两个 chip 用的是「我的筛选偏好」里保存的值
+const SCREEN_FILTERS = [
+  { key: "cs", label: "含计算机类岗位", title: "只看岗位类别/名称含计算机方向的（前端即时过滤，不影响后台提取）" },
+  { key: "keywords", label: "方向关键词", title: "只看岗位/单位/标题命中你保存的方向关键词的文章（在下方偏好里设置）" },
+  { key: "cities", label: "意向城市", title: "只看工作地点命中你保存的意向城市的文章（在下方偏好里设置）" },
+  { key: "skipped", label: "非招聘信息", title: "只看 AI 判定为与招聘无关的内容" },
+  { key: "none", label: "未筛选", title: "只看还没跑过 AI 筛选的文章" },
+];
 
 export function populateScreens() {
-  const select = document.querySelector("#screen-filter");
-  const current = state.screen;
-  const counts = { kept: 0, skipped: 0, none: 0, mine: 0 };
-  for (const group of state.groups) {
-    if (group.screen?.kind === "kept") {
-      counts.kept += 1;
-      if (matchesMine(group)) counts.mine += 1;
-    } else if (group.screen?.kind === "skipped") counts.skipped += 1;
-    else counts.none += 1;
+  const wrap = document.querySelector("#screen-filter");
+  const counts = state.board.counts || {};
+  wrap.replaceChildren();
+  for (const item of SCREEN_FILTERS) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = `chip screen-chip${state.screens.has(item.key) ? " active" : ""}`;
+    chip.title = item.title;
+    chip.append(text("span", "", item.label));
+    chip.append(text("span", "chip-count", String(counts[item.key] ?? 0)));
+    chip.addEventListener("click", () => {
+      if (state.screens.has(item.key)) state.screens.delete(item.key);
+      else state.screens.add(item.key);
+      navigate("articles", { status: state.filter, account: state.account, screens: state.screens, q: state.query, page: 1 });
+    });
+    wrap.append(chip);
   }
-  select.replaceChildren(
-    new Option("全部文章", ""),
-    new Option(`符合我的筛选（${counts.mine}）`, "mine"),
-    new Option(`计算机类精选（${counts.kept}）`, "kept"),
-    new Option(`非计算机类（${counts.skipped}）`, "skipped"),
-    new Option(`未筛选（${counts.none}）`, "none"),
-  );
-  if ([...select.options].some((option) => option.value === current)) select.value = current;
-  else state.screen = "";
-  select.disabled = counts.kept + counts.skipped === 0;
+  // 组合结果：当前所有条件（阅读状态、搜索、公众号、AI 筛选）取交集后的总数。
+  // 每个 chip 上的数字是"单选这个条件"的数，这里给的是全部已选条件的最终组合数。
+  const combined = text("span", "chip-total", `同时满足 ${state.board.total} 篇`);
+  combined.title = "当前阅读状态、搜索词、公众号与已选 AI 筛选条件全部同时满足的文章总数";
+  wrap.append(combined);
 }
 
-// ---------- 看板筛选交互 ----------
+// 路由进入时把 hash 里的筛选条件同步回控件（搜索框、下拉、分段按钮）
+export function syncControls() {
+  document.querySelectorAll("[data-status]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.status === state.filter);
+  });
+  const search = document.querySelector("#search-input");
+  if (search.value !== state.query) search.value = state.query;
+  const select = document.querySelector("#account-filter");
+  if (select.value !== state.account) select.value = state.account;
+}
 
+// ---------- 看板筛选交互（改写 hash，由路由统一处理） ----------
+
+let searchTimer = null;
 document.querySelector("#search-input").addEventListener("input", (event) => {
-  state.query = event.target.value.trim().toLocaleLowerCase("zh-CN");
-  state.page = 1;
-  renderArticles();
+  const value = event.target.value.trim().toLocaleLowerCase("zh-CN");
+  if (value === state.query) return;
+  window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    // 搜索逐字输入用 replace：不往历史里塞一串中间态
+    navigate("articles", { status: state.filter, account: state.account, screens: state.screens, q: value, page: 1 }, true);
+  }, 300);
 });
 
 document.querySelector("#account-filter").addEventListener("change", (event) => {
-  state.account = event.target.value;
-  state.page = 1;
-  renderArticles();
-});
-
-document.querySelector("#screen-filter").addEventListener("change", (event) => {
-  state.screen = event.target.value;
-  state.page = 1;
-  renderArticles();
+  navigate("articles", { status: state.filter, account: event.target.value, screens: state.screens, q: state.query, page: 1 });
 });
 
 document.querySelectorAll("[data-status]").forEach((button) => {
   button.addEventListener("click", () => {
-    document.querySelectorAll("[data-status]").forEach((item) => item.classList.toggle("active", item === button));
-    state.filter = button.dataset.status;
-    state.page = 1;
-    renderArticles();
+    if (button.dataset.status === state.filter) return;
+    navigate("articles", { status: button.dataset.status, account: state.account, screens: state.screens, q: state.query, page: 1 });
   });
 });
 
 // ---------- AI 筛选触发与进度轮询 ----------
-
-const screenRunButton = document.querySelector("#screen-run-button");
-const screenAllButton = document.querySelector("#screen-all-button");
-const screenStatus = document.querySelector("#screen-status");
-let screenTimer = null;
-
-function scopeLabel(scope) {
-  return scope === "all" ? "全部文章" : scope;
-}
-
-function screenStatusLine(scope, task) {
-  if (task.status === "running") {
-    const progress = task.log?.length ? task.log[task.log.length - 1] : "正在启动…";
-    return `${scopeLabel(scope)} 筛选中：${progress}`;
-  }
-  if (task.status === "done") return `${scopeLabel(scope)} 筛选完成 ✓（页面已刷新结果）`;
-  return `${scopeLabel(scope)} 筛选失败，详见 web/data/screen-logs/screen-${scope}.log`;
-}
-
-async function pollScreenStatus() {
-  try {
-    const payload = await request("/api/screen-status");
-    const runningScope = Object.keys(payload.tasks).find((scope) => payload.tasks[scope].status === "running");
-    if (runningScope) {
-      screenRunButton.disabled = true;
-      screenAllButton.disabled = true;
-      screenStatus.textContent = screenStatusLine(runningScope, payload.tasks[runningScope]);
-      return;
-    }
-    if (screenTimer) {
-      window.clearInterval(screenTimer);
-      screenTimer = null;
-    }
-    const scopes = Object.keys(payload.tasks);
-    if (scopes.length) {
-      const scope = scopes[scopes.length - 1];
-      const task = payload.tasks[scope];
-      screenStatus.textContent = screenStatusLine(scope, task);
-      // 筛选完成后重新拉取数据；loadApp 在 main.js，动态引入避免静态循环依赖
-      if (task.status === "done") {
-        const { loadApp } = await import("./main.js");
-        loadApp();
-      }
-    }
-    screenRunButton.disabled = false;
-    screenAllButton.disabled = false;
-  } catch (error) {
-    if (screenTimer) {
-      window.clearInterval(screenTimer);
-      screenTimer = null;
-    }
-    screenRunButton.disabled = false;
-    screenAllButton.disabled = false;
-  }
-}
-
-export function resumeScreenPolling() {
-  request("/api/screen-status").then((payload) => {
-    if (payload.running && !screenTimer) {
-      screenRunButton.disabled = true;
-      screenAllButton.disabled = true;
-      screenTimer = window.setInterval(pollScreenStatus, 3000);
-    }
-  }).catch(() => { /* 未登录或网络错误时静默 */ });
-}
-
-async function triggerScreen(body, label) {
-  screenRunButton.disabled = true;
-  screenAllButton.disabled = true;
-  screenStatus.textContent = `${label} 筛选中…（抓取文章 + 二维码解码 + 模型识别，约需几分钟）`;
-  try {
-    const payload = await request("/api/screen", { method: "POST", body: JSON.stringify(body) });
-    if (payload.started) {
-      if (!screenTimer) screenTimer = window.setInterval(pollScreenStatus, 3000);
-    } else {
-      screenRunButton.disabled = false;
-      screenAllButton.disabled = false;
-    }
-  } catch (error) {
-    screenStatus.textContent = `触发失败：${error.message}`;
-    if (error.status === 409 && !screenTimer) screenTimer = window.setInterval(pollScreenStatus, 3000);
-    else {
-      screenRunButton.disabled = false;
-      screenAllButton.disabled = false;
-    }
-  }
-}
-
-screenRunButton.addEventListener("click", () => {
-  const date = document.querySelector("#screen-date").value;
-  if (!date) {
-    screenStatus.textContent = "请先选择筛选日期";
-    return;
-  }
-  triggerScreen({ date, force: document.querySelector("#screen-force").checked }, date);
-});
-
-screenAllButton.addEventListener("click", () => {
-  triggerScreen({ all: true, force: document.querySelector("#screen-force").checked }, "全部文章");
-});
+// 手动触发 AI 筛选的 UI 已下线（日常筛选由后台脚本完成），
+// /api/screen 与 /api/screen-status 端点保留供脚本/调试使用。
 
 // ---------- 我的筛选偏好（意向城市 / 方向关键词，按用户保存在服务端） ----------
 
@@ -547,10 +388,8 @@ document.querySelector("#pref-save-button").addEventListener("click", async () =
     state.prefs = payload.preferences;
     document.querySelector("#pref-cities").value = state.prefs.cities.join("、");
     document.querySelector("#pref-keywords").value = state.prefs.keywords.join("、");
-    populateScreens();
-    state.page = 1;
-    renderArticles();
     statusNode.textContent = "偏好已保存，多设备同步 ✓";
+    await fetchBoard(); // 关键词/城市 chips 的命中数依赖偏好，重拉当前页与计数
   } catch (error) {
     statusNode.textContent = `保存失败：${error.message}`;
   } finally {

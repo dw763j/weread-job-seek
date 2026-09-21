@@ -40,8 +40,8 @@
 
         <nav class="view-tabs" aria-label="功能视图">
           <button type="button" data-view="articles" class="active">文章看板</button>
+          <button type="button" data-view="fairs">宣讲会<span id="fair-tab-count" class="tab-count" hidden></span></button>
           <button type="button" data-view="favorites">收藏<span id="fav-tab-count" class="tab-count" hidden></span></button>
-          <button type="button" data-view="applications">投递管理<span id="app-tab-count" class="tab-count" hidden></span></button>
         </nav>
 
         <div id="articles-view">
@@ -53,8 +53,8 @@
               <p id="updated-at" class="hero-updated" hidden></p>
             </div>
             <div class="progress-card" aria-label="浏览进度">
-              <div class="progress-number"><strong id="unread-count">0</strong><span>篇未读</span></div>
-              <div class="progress-track"><span id="progress-bar"></span></div>
+              <div class="progress-number" id="hero-filter-number"><strong id="unread-count">0</strong><span id="unread-label">筛选未读</span></div>
+              <div class="progress-track" title="全库阅读进度"><span id="progress-bar"></span></div>
               <p><span id="read-count">0</span> / <span id="total-count">0</span> 已浏览</p>
             </div>
           </section>
@@ -71,20 +71,10 @@
           <section class="controls" aria-label="更多筛选">
             <div class="filter-row">
               <label><span>公众号</span><select id="account-filter"><option value="">全部公众号</option></select></label>
-              <label><span>AI 筛选</span><select id="screen-filter">
-                <option value="">全部文章</option>
-                <option value="mine">符合我的筛选</option>
-                <option value="kept">计算机类精选</option>
-                <option value="skipped">非计算机类</option>
-                <option value="none">未筛选</option>
-              </select></label>
-            </div>
-            <div class="screen-run" aria-label="AI 筛选运行">
-              <label><span>筛选日期</span><input id="screen-date" type="date"></label>
-              <label class="check"><input id="screen-force" type="checkbox"><span>重新分析</span></label>
-              <button id="screen-run-button" type="button">开始 AI 筛选</button>
-              <button id="screen-all-button" type="button" class="secondary">批量筛选全部</button>
-              <p id="screen-status" role="status" aria-live="polite"></p>
+              <div class="screen-filter-block">
+                <span class="screen-filter-label">AI 筛选（多选，条件取交集）</span>
+                <div id="screen-filter" class="chip-set" aria-label="AI 筛选"></div>
+              </div>
             </div>
             <div class="prefs-row" aria-label="我的筛选偏好">
               <label><span>意向城市</span><input id="pref-cities" type="text" placeholder="如：成都、杭州、西安（命中的地点会高亮，留空不高亮）" autocomplete="off"></label>
@@ -98,6 +88,26 @@
           <nav id="pager" class="pager" hidden aria-label="文章分页"></nav>
           <div id="empty-state" class="empty-state" hidden>没有符合当前条件的文章。</div>
         </div>
+
+        <section id="fairs-view" hidden aria-label="宣讲会日程">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">CAREER FAIRS</p>
+              <h2>宣讲会 · 招聘会</h2>
+            </div>
+            <div class="fair-head-actions">
+              <span id="fair-summary" class="fair-summary"></span>
+              <button id="fair-past-toggle" type="button" class="secondary-btn">显示已结束</button>
+            </div>
+          </div>
+          <div id="fair-timeline" class="fair-timeline" aria-label="按举办日期导航"></div>
+          <div class="fair-filter-row">
+            <span class="fair-pin-label">省份筛选</span>
+            <div id="fair-province-filter" class="chip-bar" aria-label="省份筛选（可多选）"></div>
+          </div>
+          <div id="fair-list" class="fair-list"></div>
+          <div id="fair-empty" class="empty-state" hidden>还没有宣讲会信息。运行 AI 筛选提取宣讲类文章后，这里会按举办日期与省份展示。</div>
+        </section>
 
         <section id="favorites-view" hidden aria-label="收藏列表">
           <div class="panel-head">
@@ -113,47 +123,13 @@
           <div id="fav-empty" class="empty-state" hidden>还没有收藏。回到文章看板，点文章下方的「收藏」或「收藏到某分组」，文章就会出现在这里。</div>
         </section>
 
-        <section id="applications-view" hidden aria-label="投递管理">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">APPLICATIONS</p>
-              <h2>投递管理</h2>
-            </div>
-            <button id="app-form-toggle" type="button" class="secondary-btn">添加公司</button>
-          </div>
-          <form id="app-add-form" class="app-form" hidden>
-            <label><span>公司名称</span><input id="app-company" maxlength="100" autocomplete="off" required placeholder="公司名（从文章记投递时会自动预填，可修改）"></label>
-            <label><span>招聘链接</span><input id="app-joburl" maxlength="600" autocomplete="off" placeholder="https://…（招聘网站或网申链接，可选，用于一键跳转）"></label>
-            <label><span>备注</span><input id="app-note" maxlength="500" autocomplete="off" placeholder="岗位 / 渠道 / 备注（可选）"></label>
-            <div class="app-form-status">
-              <span>当前状态</span>
-              <div class="chip-set" id="app-form-status">
-                <button type="button" data-form-status="planned">待投递</button>
-                <button type="button" data-form-status="applied" class="active">已投递</button>
-              </div>
-            </div>
-            <p id="app-form-article" class="app-form-article" hidden></p>
-            <div class="app-form-actions">
-              <button type="submit">加入投递管理</button>
-              <button type="button" id="app-form-cancel" class="secondary-btn">收起</button>
-              <p id="app-form-error" class="form-error" role="alert"></p>
-            </div>
-          </form>
-          <div class="chip-bar app-filter">
-            <span id="app-filter-chips" class="chip-set" aria-label="投递状态筛选"></span>
-            <label class="app-search"><span>搜索</span><input id="app-search" type="search" placeholder="公司、备注" autocomplete="off"></label>
-          </div>
-          <div id="app-list" class="card-list"></div>
-          <div id="app-empty" class="empty-state" hidden>还没有投递记录。点右上角「添加公司」，或在文章看板 / 收藏里点「记投递」。</div>
-        </section>
-
         <div id="sync-notice" class="sync-notice" role="status" aria-live="polite"></div>
       </section>
 
       <aside id="floating-widget" class="floating-widget" hidden aria-label="阅读进度速览">
         <div class="fw-item"><strong id="today-read-count">0</strong><span>今日已读</span></div>
         <div class="fw-divider"></div>
-        <div class="fw-item"><strong id="fw-unread-count">0</strong><span>未读</span></div>
+        <div class="fw-item" id="fw-filter-item"><strong id="fw-filter-count">0</strong><span id="fw-filter-label">筛选未读</span></div>
       </aside>
     </main>
   </body>

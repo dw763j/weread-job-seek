@@ -1,11 +1,12 @@
 """HTTP 基础 mixin：路由分发、JSON/静态文件响应、会话与登录登出。
 
-各业务 API（文章看板 / 收藏 / 投递管理）以 mixin 形式挂在 CoreHandler 之上，
+各业务 API（文章看板 / 收藏）以 mixin 形式挂在 CoreHandler 之上，
 最终在 server.py 组装成完整的 RequestHandler。
 """
 
 from __future__ import annotations
 
+import gzip
 import hmac
 import json
 import mimetypes
@@ -43,8 +44,17 @@ class CoreHandler:
 
     def send_json(self, payload: Any, status: int = HTTPStatus.OK, headers: dict[str, str] | None = None) -> None:
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        # bootstrap 等大响应按 Accept-Encoding 协商压缩（浏览器/fetch 自动解压，
+        # 体积降 5-8 倍）；不声明 gzip 的客户端（老脚本/测试）拿原始 JSON，向后兼容
+        encoding = ""
+        if len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):
+            body = gzip.compress(body)
+            encoding = "gzip"
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        if encoding:
+            self.send_header("Content-Encoding", encoding)
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.security_headers()
@@ -122,12 +132,14 @@ class CoreHandler:
         path = urlparse(self.path).path
         if path == "/api/bootstrap":
             self.handle_bootstrap()
+        elif path == "/api/articles":
+            self.handle_articles()
+        elif path == "/api/fairs":
+            self.handle_fairs()
         elif path == "/api/clicks":
             self.handle_get_clicks()
         elif path == "/api/favorites":
             self.handle_favorites()
-        elif path == "/api/applications":
-            self.handle_applications()
         elif path == "/api/screen-status":
             self.handle_screen_status()
         elif path == "/healthz":
@@ -155,14 +167,10 @@ class CoreHandler:
             self.handle_set_click()
         elif path == "/api/favorites":
             self.handle_set_favorite()
+        elif path == "/api/groups/applied":
+            self.handle_group_applied()
         elif path == "/api/collections":
             self.handle_collections()
-        elif path == "/api/applications":
-            self.handle_application_add()
-        elif path == "/api/applications/update":
-            self.handle_application_update()
-        elif path == "/api/applications/delete":
-            self.handle_application_delete()
         elif path == "/api/preferences":
             self.handle_preferences()
         elif path == "/api/screen":
@@ -196,7 +204,9 @@ class CoreHandler:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", f"{media_type}; charset=utf-8" if media_type.startswith("text/") else media_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store" if target.name == "index.html" else "public, max-age=300")
+        # no-cache = 每次带条件请求重验证（304 不重传）；部署后的 JS/CSS 改动刷新即生效，
+        # 不像 max-age 那样在缓存窗口内一直用旧模块
+        self.send_header("Cache-Control", "no-store" if target.name == "index.html" else "no-cache")
         self.security_headers()
         self.end_headers()
         self.wfile.write(body)

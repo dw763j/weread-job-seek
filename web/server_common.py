@@ -9,7 +9,6 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlparse
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -26,30 +25,33 @@ MAX_CITIES = 40
 MAX_CITY_LENGTH = 24
 MAX_KEYWORDS = 30
 MAX_KEYWORD_LENGTH = 40
+# 宣讲会省份推断的唯一事实源（省级区划 / 常见城市 / 公众号所属高校）：
+# screen_lib 供筛选脚本使用，bootstrap 的 geo 字段下发给前端 fair-core.js 使用
+PROVINCES = ("北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海",
+             "江苏", "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南",
+             "广东", "广西", "海南", "重庆", "四川", "贵州", "云南", "西藏", "陕西",
+             "甘肃", "青海", "宁夏", "新疆", "香港", "澳门", "台湾")
+CITY_PROVINCES = {
+    "成都": "四川", "武汉": "湖北", "西安": "陕西", "南京": "江苏", "广州": "广东",
+    "深圳": "广东", "东莞": "广东", "杭州": "浙江", "长沙": "湖南", "合肥": "安徽",
+    "天津": "天津", "重庆": "重庆", "沈阳": "辽宁", "大连": "辽宁", "哈尔滨": "黑龙江",
+    "长春": "吉林", "青岛": "山东", "济南": "山东", "郑州": "河南", "厦门": "福建",
+    "福州": "福建", "昆明": "云南", "贵阳": "贵州", "兰州": "甘肃", "石家庄": "河北",
+    "太原": "山西", "南昌": "江西", "南宁": "广西", "海口": "海南", "西宁": "青海",
+    "银川": "宁夏", "拉萨": "西藏", "呼和浩特": "内蒙古", "乌鲁木齐": "新疆",
+    "苏州": "江苏", "无锡": "江苏", "宁波": "浙江", "珠海": "广东", "佛山": "广东",
+}
+ACCOUNT_PROVINCES = {
+    "北大就业": "北京", "北航就业": "北京", "国科大就业": "北京",
+    "人大就业创业": "北京", "成功就业": "北京",
+    "川大就业": "四川", "成电就业": "四川",
+    "西安交大就业创业": "陕西", "西电科大就业指导服务中心": "陕西", "西工大就业": "陕西",
+    "浙大就业": "浙江",
+}
 MAX_COLLECTIONS = 30
 MAX_COLLECTION_NAME = 24
-MAX_COMPANY_LENGTH = 100
 MAX_URL_LENGTH = 600
-MAX_NOTE_LENGTH = 500
-MAX_STATUS_NOTE_LENGTH = 200
 GROUP_ID_RE = re.compile(r"[0-9a-f]{24}")
-# 投递进度：按推进顺序排列的阶段 + 随时可落入的终止状态；
-# 「笔试」允许重复推进（第 N 轮笔试由历史记录区分轮次），前端渲染为步骤条而非下拉框。
-APPLICATION_STAGES = (
-    ("planned", "待投递"),
-    ("applied", "已投递"),
-    ("test", "笔试"),
-    ("interview1", "一面"),
-    ("interview2", "二面"),
-    ("interview3", "三面"),
-    ("final", "终面/HR面"),
-    ("offer", "已录用"),
-)
-APPLICATION_CLOSED = (
-    ("rejected", "未通过"),
-    ("withdrawn", "已放弃"),
-)
-APPLICATION_STATUS_KEYS = frozenset(key for key, _ in APPLICATION_STAGES + APPLICATION_CLOSED)
 TZ = timezone(timedelta(hours=8))
 COOKIE_NAME = "job_links_session"
 SESSION_DAYS = 30
@@ -94,25 +96,6 @@ def normalize_str_list(value: Any, item_limit: int, item_max_length: int) -> lis
         if text and text not in items:
             items.append(text[:item_max_length])
     return items[:item_limit]
-
-
-def clean_web_url(value: Any) -> str | None:
-    """规范用户提交的链接：只接受 http(s):// 与 mailto:；空值返回空串，非法返回 None。"""
-    if value is None:
-        return ""
-    if not isinstance(value, str):
-        return None
-    text = value.strip()
-    if not text:
-        return ""
-    if len(text) > MAX_URL_LENGTH:
-        return None
-    parsed = urlparse(text)
-    if parsed.scheme in ("http", "https") and parsed.netloc:
-        return text
-    if parsed.scheme == "mailto" and re.fullmatch(r"mailto:\S+@\S+", text):
-        return text
-    return None
 
 
 def body_int(body: dict[str, Any], key: str) -> int | None:
