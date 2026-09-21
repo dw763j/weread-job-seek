@@ -6,120 +6,120 @@
       "ok": true,
       "mode": "增量",
       "newCount": 7,
-      "count": 1579,
+      "count": 1668,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:34:41.203Z"
+      "at": "2026-09-21T01:42:35.413Z"
     },
     "北航就业": {
       "name": "北航就业",
       "bookId": "MP_WXS_2393247766",
       "ok": true,
       "mode": "增量",
-      "newCount": 24,
-      "count": 2345,
+      "newCount": 16,
+      "count": 2457,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:35:34.252Z"
+      "at": "2026-09-21T01:43:29.204Z"
     },
     "成电就业": {
       "name": "成电就业",
       "bookId": "MP_WXS_3070017215",
       "ok": true,
       "mode": "增量",
-      "newCount": 16,
-      "count": 1651,
+      "newCount": 8,
+      "count": 1763,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:36:01.113Z"
+      "at": "2026-09-21T01:43:55.920Z"
     },
     "北大就业": {
       "name": "北大就业",
       "bookId": "MP_WXS_3086031217",
       "ok": true,
       "mode": "增量",
-      "newCount": 17,
-      "count": 1750,
+      "newCount": 16,
+      "count": 1863,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:36:27.721Z"
+      "at": "2026-09-21T01:44:22.247Z"
     },
     "西安交大就业创业": {
       "name": "西安交大就业创业",
       "bookId": "MP_WXS_3087904611",
       "ok": true,
       "mode": "增量",
-      "newCount": 24,
-      "count": 2762,
+      "newCount": 16,
+      "count": 2874,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:36:55.110Z"
+      "at": "2026-09-21T01:44:49.492Z"
     },
     "川大就业": {
       "name": "川大就业",
       "bookId": "MP_WXS_3080436637",
       "ok": true,
       "mode": "增量",
-      "newCount": 24,
-      "count": 2048,
+      "newCount": 16,
+      "count": 2154,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:37:21.993Z"
+      "at": "2026-09-21T01:45:16.221Z"
     },
     "人大就业创业": {
       "name": "人大就业创业",
       "bookId": "MP_WXS_2391191683",
       "ok": true,
       "mode": "增量",
-      "newCount": 17,
-      "count": 1544,
+      "newCount": 15,
+      "count": 1655,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:37:48.532Z"
+      "at": "2026-09-21T01:45:43.253Z"
     },
     "浙大就业": {
       "name": "浙大就业",
       "bookId": "MP_WXS_2392057576",
       "ok": true,
       "mode": "增量",
-      "newCount": 24,
-      "count": 2569,
+      "newCount": 16,
+      "count": 2681,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:38:15.604Z"
+      "at": "2026-09-21T01:46:09.235Z"
     },
     "西电科大就业指导服务中心": {
       "name": "西电科大就业指导服务中心",
       "bookId": "MP_WXS_2397504902",
       "ok": true,
       "mode": "增量",
-      "newCount": 23,
-      "count": 2420,
+      "newCount": 15,
+      "count": 2527,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:38:42.077Z"
+      "at": "2026-09-21T01:46:35.580Z"
     },
     "西工大就业": {
       "name": "西工大就业",
       "bookId": "MP_WXS_3099598513",
       "ok": true,
       "mode": "增量",
-      "newCount": 24,
-      "count": 2298,
+      "newCount": 16,
+      "count": 2409,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:39:08.891Z"
+      "at": "2026-09-21T01:47:02.256Z"
     },
     "国科大就业": {
       "name": "国科大就业",
       "bookId": "MP_WXS_3882610996",
       "ok": true,
       "mode": "增量",
-      "newCount": 16,
-      "count": 2714,
+      "newCount": 8,
+      "count": 2818,
       "stoppedAtKnown": false,
       "stoppedAtRange": true,
-      "at": "2026-09-07T01:35:07.480Z"
+      "at": "2026-09-21T01:43:01.887Z"
     }
   }
 }
