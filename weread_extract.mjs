@@ -110,17 +110,18 @@ function runSummary() {
   // 用 uv 统一管理 Python 版本和依赖（可通过 UV_BIN 指定 uv 路径）。
   // 缓存目录固定到项目内，避免依赖 $HOME/.cache（sudo/守护环境下易权限错乱）。
   const uvBin = process.env.UV_BIN || "uv";
+  console.log("生成汇总：运行 generate_summary.py…");
   const pyResult = spawnSync(uvBin, ["run", "python", SUMMARY_PY, ...rangeArgs], {
     // 必须从项目根目录运行，确保 uv 读取当前项目的 pyproject.toml / uv.lock。
     cwd: __dirname,
-    encoding: "utf-8",
     env: { ...process.env, UV_CACHE_DIR: join(__dirname, ".uv-cache") },
+    // 汇总耗时数分钟，实时透传子进程输出，避免缓冲到退出才打印、看起来像卡死。
+    stdio: ["ignore", "inherit", "inherit"],
   });
   if (pyResult.error) {
     console.error("调用 generate_summary.py 失败：", pyResult.error.message);
-  } else {
-    process.stdout.write(pyResult.stdout || "");
-    if (pyResult.status !== 0) process.stderr.write(pyResult.stderr || "");
+  } else if (pyResult.status !== 0) {
+    console.error(`generate_summary.py 退出码 ${pyResult.status}`);
   }
 }
 

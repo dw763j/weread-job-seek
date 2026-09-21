@@ -456,7 +456,10 @@ def candidate_pairs(rows: list[dict[str, str]], same_title: set[tuple[int, int]]
     normalized = [normalized_title(row["文章标题"]) for row in rows]
     entities = [entity_text(row["文章标题"]) for row in rows]
     brand_sets = [effective_brands(row["文章标题"]) for row in rows]  # 预计算，O(n) 次扫描
-    for left in range(len(rows)):
+    total = len(rows)
+    for left in range(total):
+        if left and left % 2000 == 0:
+            print(f"    候选对扫描 {left}/{total} 行，暂命中 {len(scored)} 对", flush=True)
         for right in range(left + 1, len(rows)):
             if (left, right) in same_title:
                 continue
@@ -475,6 +478,7 @@ def candidate_pairs(rows: list[dict[str, str]], same_title: set[tuple[int, int]]
             # 三路任一命中即送模型复核：整题高度相似 / 短题被包含（前缀后缀差异） / 实体一致
             if ent_ratio >= 0.8 or full_ratio >= 0.85 or contained:
                 scored.append((max(ent_ratio, full_ratio, 1.0 if contained else 0.0), left, right))
+    print(f"    候选对扫描完成：命中 {len(scored)} 对", flush=True)
     scored.sort(reverse=True)
     return [(left, right) for _, left, right in scored]
 
@@ -903,10 +907,12 @@ def main() -> int:
         print("  未提供 API 密钥，将不带 Authorization 调用（适用于无需鉴权的本地端点）。", flush=True)
 
     lo, hi = parse_range(args.range)
-    rows = [row for row in read_account_rows(args.input_dir) if in_window(row, lo, hi)]
+    all_rows = read_account_rows(args.input_dir)
+    rows = [row for row in all_rows if in_window(row, lo, hi)]
     rows.sort(key=row_sort_key, reverse=True)
     if not rows:
         raise SystemExit("窗口内没有数据（检查 --range 或先运行提取脚本）。")
+    print(f"  读取单号 CSV：共 {len(all_rows)} 条，窗口内 {len(rows)} 条。", flush=True)
     write_summary_csv(args.output_dir / "汇总-全部公众号.csv", rows)
 
     by_title: dict[str, list[int]] = defaultdict(list)
@@ -936,6 +942,7 @@ def main() -> int:
         for pair in candidate_pairs(rows, exact_pairs)
         if pair not in wrap_pairs
     ][: args.max_pairs]
+    print(f"  语义候选对 {len(candidates)} 条（上限 {args.max_pairs}）。", flush=True)
     reused_semantic_pairs: set[tuple[int, int]] = set()
     pairs_to_ask: list[tuple[int, int]] = list(candidates)
     decision_cache: dict[tuple[str, str], dict[str, Any]] = {}
@@ -1054,6 +1061,7 @@ def main() -> int:
         for brands, title, size in mixed_groups[:10]:
             print(f"     {'/'.join(sorted(brands))} × {size} 条 ← {title[:40]}", flush=True)
 
+    print("  收集点击状态，写入 Markdown / HTML / 分组 JSON…", flush=True)
     clicked = propagate_clicked_in_groups(collect_clicked_state(args.html_dir), merged_groups)
     save_clicked_state(clicked, source="collect+group-propagation")
 
